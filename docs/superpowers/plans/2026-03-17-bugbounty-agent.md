@@ -3474,7 +3474,7 @@ contract ArbiterContract {
     function _penalizeNoShows(uint256 bugId) internal {
         Arbitration storage a = _arbitrations[bugId];
         for (uint256 i = 0; i < 3; i++) {
-            if (a.jurors[i] != 0 && !a.revealed[i] && a.commitHashes[i] == bytes32(0)) {
+            if (a.jurors[i] != 0 && !a.revealed[i]) {
                 reputationRegistry.giveFeedback(a.jurors[i], -20, "vote_timeout", "");
             }
         }
