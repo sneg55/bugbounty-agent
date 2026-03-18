@@ -27,6 +27,7 @@ contract ArbiterContractTest is Test {
     address public arbiterOwner1 = makeAddr("arbiterOwner1");
     address public arbiterOwner2 = makeAddr("arbiterOwner2");
     address public arbiterOwner3 = makeAddr("arbiterOwner3");
+    address public arbiterOwner4 = makeAddr("arbiterOwner4");
 
     uint256 public protocolAgentId;
     uint256 public hunterAgentId;
@@ -34,6 +35,7 @@ contract ArbiterContractTest is Test {
     uint256 public arbiterAgentId1;
     uint256 public arbiterAgentId2;
     uint256 public arbiterAgentId3;
+    uint256 public arbiterAgentId4;
     uint256 public bountyId;
     uint256 public bugId;
 
@@ -63,6 +65,7 @@ contract ArbiterContractTest is Test {
         arbiterAgentId1 = identity.mintAgent(arbiterOwner1, "ipfs://arbiter1");
         arbiterAgentId2 = identity.mintAgent(arbiterOwner2, "ipfs://arbiter2");
         arbiterAgentId3 = identity.mintAgent(arbiterOwner3, "ipfs://arbiter3");
+        arbiterAgentId4 = identity.mintAgent(arbiterOwner4, "ipfs://arbiter4");
         vm.stopPrank();
 
         // Register arbiters
@@ -72,6 +75,8 @@ contract ArbiterContractTest is Test {
         arbiter.registerArbiter(arbiterAgentId2);
         vm.prank(arbiterOwner3);
         arbiter.registerArbiter(arbiterAgentId3);
+        vm.prank(arbiterOwner4);
+        arbiter.registerArbiter(arbiterAgentId4);
 
         // Setup bounty
         usdc.mint(protocolOwner, 50_000e6);
@@ -103,6 +108,7 @@ contract ArbiterContractTest is Test {
         vm.prank(executor);
         validation.submitValidation(executorAgentId, reqHash, "ipfs://statediff");
 
+        vm.prank(owner);
         arbiter.setExecutor(executor);
         vm.prank(executor);
         arbiter.registerStateImpact(bugId, reqHash, "ipfs://statediff");
@@ -113,6 +119,7 @@ contract ArbiterContractTest is Test {
         bytes32 reqHash = keccak256("statehash");
         vm.prank(executor);
         validation.submitValidation(executorAgentId, reqHash, "ipfs://statediff");
+        vm.prank(owner);
         arbiter.setExecutor(executor);
         vm.prank(executor);
         arbiter.registerStateImpact(bugId, reqHash, "ipfs://statediff");
@@ -144,10 +151,17 @@ contract ArbiterContractTest is Test {
         assertEq(usdc.balanceOf(hunterOwner), 1_000e6 + 25_000e6); // original 1000 + 25000 payout (stake 250 returned included in 1000)
     }
 
+    function test_non_deployer_cannot_set_executor() public {
+        vm.prank(makeAddr("attacker"));
+        vm.expectRevert("Only deployer");
+        arbiter.setExecutor(makeAddr("evil"));
+    }
+
     function test_majority_invalid_slashes_stake() public {
         bytes32 reqHash = keccak256("statehash");
         vm.prank(executor);
         validation.submitValidation(executorAgentId, reqHash, "ipfs://statediff");
+        vm.prank(owner);
         arbiter.setExecutor(executor);
         vm.prank(executor);
         arbiter.registerStateImpact(bugId, reqHash, "ipfs://statediff");
@@ -173,5 +187,44 @@ contract ArbiterContractTest is Test {
 
         // Hunter should have lost stake (250 USDC)
         assertEq(usdc.balanceOf(hunterOwner), 750e6); // 1000 - 250 stake
+    }
+
+    function test_reputation_ranked_jury_selection() public {
+        // Authorize this test contract to give reputation feedback directly
+        vm.prank(owner);
+        reputation.addAuthorizedCaller(address(this));
+
+        // Give arbiterAgentId1 and arbiterAgentId2 more "consensus_aligned" feedback
+        // so they rank higher than arbiterAgentId3 and arbiterAgentId4
+        reputation.giveFeedback(arbiterAgentId1, 10, "consensus_aligned", "HIGH");
+        reputation.giveFeedback(arbiterAgentId1, 10, "consensus_aligned", "HIGH");
+        reputation.giveFeedback(arbiterAgentId2, 10, "consensus_aligned", "MEDIUM");
+        // arbiterAgentId3 and arbiterAgentId4 remain at 0 consensus_aligned count
+
+        // Confirm scores: arbiter1=2, arbiter2=1, arbiter3=0, arbiter4=0
+        assertEq(reputation.getFeedbackCount(arbiterAgentId1, "consensus_aligned"), 2);
+        assertEq(reputation.getFeedbackCount(arbiterAgentId2, "consensus_aligned"), 1);
+        assertEq(reputation.getFeedbackCount(arbiterAgentId3, "consensus_aligned"), 0);
+        assertEq(reputation.getFeedbackCount(arbiterAgentId4, "consensus_aligned"), 0);
+
+        // Register state impact to trigger jury selection
+        bytes32 reqHash = keccak256("statehash2");
+        vm.prank(executor);
+        validation.submitValidation(executorAgentId, reqHash, "ipfs://statediff2");
+        vm.prank(owner);
+        arbiter.setExecutor(executor);
+        vm.prank(executor);
+        arbiter.registerStateImpact(bugId, reqHash, "ipfs://statediff2");
+
+        // Verify the jury: top 3 by consensus_aligned score should be selected
+        ArbiterContract.Arbitration memory arb = arbiter.getArbitration(bugId);
+
+        // Build a set of selected juror IDs
+        bool arbiter1Selected = (arb.jurors[0] == arbiterAgentId1 || arb.jurors[1] == arbiterAgentId1 || arb.jurors[2] == arbiterAgentId1);
+        bool arbiter2Selected = (arb.jurors[0] == arbiterAgentId2 || arb.jurors[1] == arbiterAgentId2 || arb.jurors[2] == arbiterAgentId2);
+
+        // arbiter1 (score=2) and arbiter2 (score=1) must be in the jury
+        assertTrue(arbiter1Selected, "Highest-ranked arbiter should be selected");
+        assertTrue(arbiter2Selected, "Second-ranked arbiter should be selected");
     }
 }

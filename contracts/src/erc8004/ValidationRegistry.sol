@@ -36,6 +36,7 @@ contract ValidationRegistry is Ownable {
         bytes32 requestHash,
         string calldata resultURI
     ) external onlyAuthorized {
+        require(!_validations[requestHash].exists, "Validation already exists");
         _validations[requestHash] = Validation(executorAgentId, resultURI, block.timestamp, true);
         emit ValidationSubmitted(executorAgentId, requestHash, resultURI);
     }

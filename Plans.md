@@ -86,5 +86,64 @@ All agent tests touching the chain run against **local Anvil** with deployed con
 
 ---
 
+## Phase 2: Code Review Fixes
+
+Created: 2026-03-18 | Source: Post-implementation code review
+
+### P1 — Security (Critical)
+
+| Task | Description | DoD | Depends | Status |
+|------|------------|-----|---------|--------|
+| 2.1 | **Fix `setExecutor` access control** | `forge test` passes; test proves non-deployer reverts on `setExecutor()` | - | `cc:完了` |
+| 2.2 | **Wire executor setup into deployment scripts** | Both scripts call `setExecutor(executorAddress)` on ArbiterContract | 2.1 | `cc:完了` |
+| 2.3 | **Prevent ValidationRegistry overwrite** | Test proves second `submitValidation()` with same hash reverts | - | `cc:完了` |
+| 2.4 | **Enforce `minHunterReputation` in `commitBug()`** | Test proves hunter below threshold reverts on `commitBug()` | - | `cc:完了` |
+| 2.5 | **Add pending-submission guard to `withdrawRemainder()`** | Test proves `withdrawRemainder()` reverts when pending submissions exist | - | `cc:完了` |
+
+### P2 — Dashboard ABI Sync
+
+| Task | Description | DoD | Depends | Status |
+|------|------------|-----|---------|--------|
+| 2.6 | **Regenerate `contracts.ts` ABIs from Foundry artifacts** | `npm run build` passes; every ABI function exists in `.sol` | - | `cc:完了` |
+| 2.7 | **Fix BountiesPage to use actual contract methods** | `npm run build` clean | 2.6 | `cc:完了` |
+| 2.8 | **Fix SubmissionDetailPage** | `npm run build` clean | 2.6 | `cc:完了` |
+| 2.9 | **Fix AgentsPage** | `npm run build` clean | 2.6 | `cc:完了` |
+| 2.10 | **Clean up frontend template remnants** | No dead files; `npm run build` clean | - | `cc:完了` |
+
+### P3 — Architectural Completeness
+
+| Task | Description | DoD | Depends | Status |
+|------|------------|-----|---------|--------|
+| 2.11 | **Wire patch guidance into executor service** | `service.py` calls patch guidance for HIGH/CRITICAL | - | `cc:完了` |
+| 2.12 | **Implement Protocol Agent watch mode** | `agent.py watch` polls events and decrypts patch guidance | - | `cc:完了` |
+| 2.13 | **Implement reputation-ranked jury selection** | Test proves higher-rep arbiters selected; `forge test` passes | - | `cc:完了` |
+| 2.14 | **Fix ECIES metadata registration** | Real keypairs generated; `bytes` signature used | - | `cc:完了` |
+
+### P4 — Technical Debt
+
+| Task | Description | DoD | Depends | Status |
+|------|------------|-----|---------|--------|
+| 2.15 | **Fix executor state impact construction** | chain_id from config; trace parser for balance/storage | - | `cc:完了` |
+| 2.16 | **Fix fork runner** | Copies libs; JSON output parsing with fallback | - | `cc:完了` |
+| 2.17 | **Fix always-true test assertion** | Meaningful provider assertion; no `or True` | - | `cc:完了` |
+| 2.18 | **Add IPFS timeout/retry** | timeout=30; retry with backoff on transient failures | - | `cc:完了` |
+
+### P5 — Optimization
+
+| Task | Description | DoD | Depends | Status |
+|------|------------|-----|---------|--------|
+| 2.19 | **Add event cursoring to agent polling loops** | BlockCursor utility; all agents use incremental ranges | - | `cc:完了` |
+| 2.20 | **Optimize LiveFeedPage to incremental block windows** | Incremental polling with dedup | - | `cc:完了` |
+
+### P6 — Test Coverage for New Fixes
+
+| Task | Description | DoD | Depends | Status |
+|------|------------|-----|---------|--------|
+| 2.21 | **Solidity tests for security fixes** | 9 new tests: setExecutor, overwrite, reputation, pending, jury ranking | 2.1, 2.3, 2.4, 2.5, 2.13 | `cc:完了` |
+| 2.22 | **Python tests for completeness fixes** | IPFS timeout, block cursor, patch guidance encrypt+upload | 2.11, 2.18, 2.19 | `cc:完了` |
+| 2.23 | **Update FullLifecycle.t.sol** | test_security_guards: minRep + pending withdrawal | 2.1, 2.4, 2.5, 2.13 | `cc:完了` |
+
+---
+
 ## Archive
 <!-- Completed tasks move here -->

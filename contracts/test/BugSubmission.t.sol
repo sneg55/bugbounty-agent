@@ -113,6 +113,29 @@ contract BugSubmissionTest is Test {
         submission.revealBug(bugId, "ipfs://enc", bytes32("salt"));
     }
 
+    function test_insufficient_reputation_rejected() public {
+        // Create a bounty that requires minHunterReputation > 0
+        usdc.mint(protocolOwner, 50_000e6);
+        vm.prank(protocolOwner);
+        usdc.approve(address(bountyRegistry), type(uint256).max);
+        vm.prank(protocolOwner);
+        uint256 restrictedBountyId = bountyRegistry.createBounty(
+            protocolAgentId,
+            "RestrictedProtocol",
+            "ipfs://scope2",
+            BountyRegistry.Tiers(25_000e6, 10_000e6, 2_000e6, 500e6),
+            50_000e6,
+            block.timestamp + 30 days,
+            100 // minHunterReputation = 100
+        );
+
+        // Hunter has 0 reputation — commit should revert
+        bytes32 commitHash = keccak256(abi.encode("ipfs://enc", hunterAgentId, bytes32("salt")));
+        vm.prank(hunterOwner);
+        vm.expectRevert("Insufficient reputation");
+        submission.commitBug(restrictedBountyId, commitHash, hunterAgentId, 4);
+    }
+
     function test_max_3_submissions_per_hunter() public {
         vm.startPrank(hunterOwner);
         for (uint256 i = 0; i < 3; i++) {

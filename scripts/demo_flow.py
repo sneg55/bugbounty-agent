@@ -212,6 +212,16 @@ def setup_agents(addrs: dict, rpc_url: str) -> dict:
         )
         agent_ids[role] = idx
 
+    # Set executor on ArbiterContract
+    print("  Setting executor on ArbiterContract")
+    cast_send(
+        arbiter,
+        "setExecutor(address)",
+        [ANVIL_ADDRESSES[3]],
+        ANVIL_KEYS[0],
+        rpc_url,
+    )
+
     # Register executor as authorized caller in ValidationRegistry
     print("  Authorizing executor in ValidationRegistry")
     cast_send(

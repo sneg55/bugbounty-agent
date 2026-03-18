@@ -36,7 +36,7 @@ async function fetchAgents(): Promise<Agent[]> {
     provider,
   )
 
-  const count = await identityContract.agentCount()
+  const count = await identityContract.totalAgents()
   const total = Number(count)
   const agents: Agent[] = []
 

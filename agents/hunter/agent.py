@@ -6,6 +6,7 @@ import time
 from common.contracts import get_web3, get_all_contracts
 from common.config import load_deployments
 from common.ipfs import download_json
+from common.block_cursor import BlockCursor
 from hunter.scanner import run_slither, parse_findings
 from hunter.reasoning import analyze_findings
 from hunter.poc_generator import generate_poc
@@ -93,13 +94,18 @@ def main():
         scan_bounty(w3, contracts, args.bounty_id, hunter_agent_id, executor_pubkey)
     elif args.watch:
         print("Watching for new bounties... (Ctrl+C to stop)")
+        cursor = BlockCursor("hunter")
         seen_bounties = set()
         while True:
-            count = contracts["bountyRegistry"].functions.getBountyCount().call()
-            for i in range(1, count + 1):
-                if i not in seen_bounties:
-                    seen_bounties.add(i)
-                    scan_bounty(w3, contracts, i, hunter_agent_id, executor_pubkey)
+            latest = w3.eth.block_number
+            last = cursor.get_last_block()
+            if latest > last:
+                count = contracts["bountyRegistry"].functions.getBountyCount().call()
+                for i in range(1, count + 1):
+                    if i not in seen_bounties:
+                        seen_bounties.add(i)
+                        scan_bounty(w3, contracts, i, hunter_agent_id, executor_pubkey)
+                cursor.set_last_block(latest)
             time.sleep(10)
 
 

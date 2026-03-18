@@ -56,6 +56,7 @@ contract ArbiterContract {
     }
 
     function setExecutor(address _executor) external {
+        require(msg.sender == deployer, "Only deployer");
         require(executor == address(0), "Already set");
         executor = _executor;
     }
@@ -115,21 +116,42 @@ contract ArbiterContract {
         BountyRegistry.Bounty memory b = bounty.getBounty(sub.bountyId);
         address protocolOwner = identityRegistry.ownerOf(b.protocolAgentId);
 
-        // Select top 3 eligible arbiters from pool
-        // NOTE: Simplified for demo — takes first 3 eligible arbiters.
-        // Production version should sort by ReputationRegistry.getFeedbackCount(id, "consensus_aligned")
-        uint256 selected = 0;
-        for (uint256 i = 0; i < arbiterPool.length && selected < 3; i++) {
+        // Collect eligible arbiters into memory arrays
+        uint256 poolLen = arbiterPool.length;
+        uint256[] memory eligibleIds = new uint256[](poolLen);
+        uint256[] memory eligibleScores = new uint256[](poolLen);
+        uint256 eligibleCount = 0;
+
+        for (uint256 i = 0; i < poolLen; i++) {
             uint256 candidateId = arbiterPool[i];
             address candidateOwner = identityRegistry.ownerOf(candidateId);
 
             // Exclude conflicts
             if (candidateOwner == hunterOwner || candidateOwner == protocolOwner) continue;
 
-            a.jurors[selected] = candidateId;
-            selected++;
+            uint256 score = reputationRegistry.getFeedbackCount(candidateId, "consensus_aligned");
+            eligibleIds[eligibleCount] = candidateId;
+            eligibleScores[eligibleCount] = score;
+            eligibleCount++;
         }
-        require(selected == 3, "Not enough eligible arbiters");
+
+        require(eligibleCount >= 3, "Not enough eligible arbiters");
+
+        // Select top 3 by score (3 passes: find max, mark selected, repeat)
+        bool[] memory picked = new bool[](eligibleCount);
+        for (uint256 pick = 0; pick < 3; pick++) {
+            uint256 bestIdx = type(uint256).max;
+            uint256 bestScore = 0;
+            for (uint256 j = 0; j < eligibleCount; j++) {
+                if (picked[j]) continue;
+                if (bestIdx == type(uint256).max || eligibleScores[j] > bestScore) {
+                    bestIdx = j;
+                    bestScore = eligibleScores[j];
+                }
+            }
+            picked[bestIdx] = true;
+            a.jurors[pick] = eligibleIds[bestIdx];
+        }
 
         emit JurySelected(bugId, a.jurors);
     }

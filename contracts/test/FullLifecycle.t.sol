@@ -137,4 +137,76 @@ contract FullLifecycleTest is Test {
         // 10. Verify bounty remaining funds: 50k - 25k paid = 25k
         assertEq(bountyReg.getRemainingFunds(bountyId), 25_000e6);
     }
+
+    function test_security_guards() public {
+        // --- Part 1: minHunterReputation guard ---
+        // Create a bounty requiring reputation >= 50
+        vm.prank(protocolOwner);
+        uint256 bountyId2 = bountyReg.createBounty(
+            1, "SecureProtocol", "ipfs://scope2",
+            BountyRegistry.Tiers(25_000e6, 10_000e6, 2_000e6, 500e6),
+            10_000e6, block.timestamp + 30 days, 50
+        );
+
+        // Hunter has rep=0; commitBug should revert
+        string memory cid2 = "ipfs://encrypted2";
+        bytes32 salt2 = bytes32("salt2");
+        bytes32 commitHash2 = keccak256(abi.encode(cid2, uint256(2), salt2));
+        vm.prank(hunterOwner);
+        vm.expectRevert("Insufficient reputation");
+        bugSub.commitBug(bountyId2, commitHash2, 2, 3);
+
+        // Grant hunter enough reputation via authorized caller (owner adds test as caller)
+        vm.prank(owner);
+        reputation.addAuthorizedCaller(address(this));
+        reputation.giveFeedback(2, 50, "test_boost", "");
+
+        // Now hunter has rep=50; commitBug should succeed
+        vm.prank(hunterOwner);
+        uint256 bugId2 = bugSub.commitBug(bountyId2, commitHash2, 2, 3);
+        assertGt(bugId2, 0);
+
+        // --- Part 2: pending-submission withdrawal guard ---
+        // Create another bounty for withdrawal test
+        vm.prank(protocolOwner);
+        uint256 bountyId3 = bountyReg.createBounty(
+            1, "WithdrawProtocol", "ipfs://scope3",
+            BountyRegistry.Tiers(5_000e6, 2_000e6, 500e6, 100e6),
+            5_000e6, block.timestamp + 7 days, 0
+        );
+
+        // Hunter commits a bug against bountyId3
+        string memory cid3 = "ipfs://encrypted3";
+        bytes32 salt3 = bytes32("salt3");
+        bytes32 commitHash3 = keccak256(abi.encode(cid3, uint256(2), salt3));
+        vm.prank(hunterOwner);
+        uint256 bugId3 = bugSub.commitBug(bountyId3, commitHash3, 2, 2);
+
+        // Hunter reveals the bug
+        vm.prank(hunterOwner);
+        bugSub.revealBug(bugId3, cid3, salt3);
+
+        // Warp past deadline + grace period
+        BountyRegistry.Bounty memory b3 = bountyReg.getBounty(bountyId3);
+        vm.warp(b3.deadline + bountyReg.GRACE_PERIOD() + 1);
+
+        // Protocol tries to withdraw remainder — should revert (pending submission exists)
+        vm.prank(protocolOwner);
+        vm.expectRevert("Pending submissions exist");
+        bountyReg.withdrawRemainder(bountyId3);
+
+        // Resolve the submission via arbiter
+        vm.prank(address(arbiter));
+        // We call resolveSubmission directly since arbiter is the only one who can
+        bugSub.resolveSubmission(bugId3, 2, true);
+
+        // Now no pending submissions — withdrawal should succeed
+        uint256 balBefore = usdc.balanceOf(protocolOwner);
+        vm.prank(protocolOwner);
+        bountyReg.withdrawRemainder(bountyId3);
+        uint256 balAfter = usdc.balanceOf(protocolOwner);
+
+        // Protocol received the remainder: 5k funded - 500 payout = 4500e6
+        assertEq(balAfter - balBefore, 4_500e6);
+    }
 }

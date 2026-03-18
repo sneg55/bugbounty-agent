@@ -158,17 +158,52 @@ def register_agents(addresses: dict, rpc_url: str) -> dict:
         )
         agent_ids[role] = idx
 
-    # Register ECIES public keys as metadata (demo placeholder values)
-    print("  Registering ECIES public keys ...")
+    # Generate real ECIES keypairs for each agent role and register public keys
+    print("  Generating ECIES keypairs and registering public keys ...")
+    print("  *** Save the private keys below into your .env file ***")
+    generated_keys = {}
     for role, addr, key in roles:
-        demo_pubkey = "0x04" + "ab" * 32  # placeholder 65-byte uncompressed pub key
+        # Generate keypair by invoking Python's ecies library in a subprocess
+        result = subprocess.run(
+            [
+                sys.executable, "-c",
+                "from ecies.utils import generate_eth_key; k=generate_eth_key(); "
+                "print(k.to_hex(), k.public_key.to_hex())"
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            # Fallback: use deterministic test keys that differ per role (not for production)
+            priv_hex = "0x" + hex(hash(role) & ((1 << 256) - 1))[2:].zfill(64)
+            pub_hex = "0x04" + hex(abs(hash(role + "_pub")) % (2 ** 256))[2:].zfill(64) * 2
+        else:
+            parts = result.stdout.strip().split()
+            priv_hex = parts[0]
+            pub_hex = parts[1]
+
+        generated_keys[role] = {"private": priv_hex, "public": pub_hex}
+        env_var = f"{role.upper()}_ECIES_PRIVATE_KEY={priv_hex}"
+        print(f"    {env_var}")
+
+        # setMetadata value must be bytes — pass public key as hex bytes argument
         cast_send(
             identity,
-            "setMetadata(uint256,string,string)",
-            [str(agent_ids[role]), "eciesPubKey", demo_pubkey],
+            "setMetadata(uint256,string,bytes)",
+            [str(agent_ids[role]), "eciesPubKey", pub_hex],
             key,
             rpc_url,
         )
+
+    # Set executor on ArbiterContract
+    print("  Setting executor on ArbiterContract ...")
+    cast_send(
+        arbiter,
+        "setExecutor(address)",
+        [ANVIL_ADDRESSES[3]],
+        deployer_key,
+        rpc_url,
+    )
 
     # Authorize executor in ValidationRegistry
     print("  Authorizing executor in ValidationRegistry ...")

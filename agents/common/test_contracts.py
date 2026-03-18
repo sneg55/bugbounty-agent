@@ -17,6 +17,7 @@ def test_load_abi_reads_foundry_artifact():
     assert "mint" in fn_names
 
 
-def test_get_web3_returns_connected_provider():
+def test_get_web3_returns_provider():
     w3 = get_web3()
-    assert w3.is_connected() or True  # May not be connected without RPC
+    assert w3.provider is not None
+    assert hasattr(w3.provider, 'endpoint_uri')

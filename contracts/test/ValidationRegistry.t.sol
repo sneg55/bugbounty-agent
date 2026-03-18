@@ -44,4 +44,14 @@ contract ValidationRegistryTest is Test {
         vm.expectRevert("Not authorized");
         registry.submitValidation(88, keccak256("test"), "ipfs://x");
     }
+
+    function test_cannot_overwrite_validation() public {
+        bytes32 reqHash = keccak256("test");
+        vm.prank(executor);
+        registry.submitValidation(88, reqHash, "ipfs://first");
+
+        vm.prank(executor);
+        vm.expectRevert("Validation already exists");
+        registry.submitValidation(88, reqHash, "ipfs://second");
+    }
 }

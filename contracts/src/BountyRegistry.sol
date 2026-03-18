@@ -5,6 +5,10 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "./erc8004/IdentityRegistry.sol";
 
+interface IBugSubmission {
+    function getPendingCount(uint256 bountyId) external view returns (uint256);
+}
+
 contract BountyRegistry {
     using SafeERC20 for IERC20;
 
@@ -117,6 +121,11 @@ contract BountyRegistry {
         require(identityRegistry.ownerOf(b.protocolAgentId) == msg.sender, "Not agent owner");
         require(block.timestamp > b.deadline + GRACE_PERIOD, "Deadline + grace not passed");
         require(b.active, "Already withdrawn");
+        require(
+            bugSubmissionContract == address(0) ||
+            IBugSubmission(bugSubmissionContract).getPendingCount(bountyId) == 0,
+            "Pending submissions exist"
+        );
 
         uint256 remainder = b.totalFunding - b.totalPaid;
         require(remainder > 0, "No remainder");

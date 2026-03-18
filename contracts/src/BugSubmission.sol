@@ -38,6 +38,7 @@ contract BugSubmission {
     uint256 private _nextBugId;
     mapping(uint256 => Submission) private _submissions;
     mapping(uint256 => mapping(uint256 => uint256)) private _activeSubmissionCount; // bountyId => hunterAgentId => count
+    mapping(uint256 => uint256) private _pendingCountPerBounty; // bountyId => pending submission count
 
     event BugCommitted(uint256 indexed bugId, uint256 indexed bountyId, uint256 indexed hunterAgentId, uint8 claimedSeverity);
     event BugRevealed(uint256 indexed bugId, string encryptedCID);
@@ -77,6 +78,13 @@ contract BugSubmission {
         require(bounty.active, "Bounty not active");
         require(block.timestamp < bounty.deadline, "Bounty expired");
 
+        if (bounty.minHunterReputation > 0) {
+            require(
+                reputationRegistry.getReputation(hunterAgentId) >= bounty.minHunterReputation,
+                "Insufficient reputation"
+            );
+        }
+
         uint256 stake = _calculateStake(hunterAgentId, claimedSeverity);
 
         _nextBugId++;
@@ -97,6 +105,7 @@ contract BugSubmission {
         });
 
         _activeSubmissionCount[bountyId][hunterAgentId]++;
+        _pendingCountPerBounty[bountyId]++;
         usdc.safeTransferFrom(msg.sender, address(this), stake);
         bountyRegistry.incrementSubmissionCount(bountyId);
 
@@ -129,6 +138,7 @@ contract BugSubmission {
         sub.isValid = isValid;
 
         _activeSubmissionCount[sub.bountyId][sub.hunterAgentId]--;
+        _pendingCountPerBounty[sub.bountyId]--;
 
         if (isValid && finalSeverity > 0) {
             // Return stake
@@ -152,6 +162,7 @@ contract BugSubmission {
         sub.isValid = false;
 
         _activeSubmissionCount[sub.bountyId][sub.hunterAgentId]--;
+        _pendingCountPerBounty[sub.bountyId]--;
 
         // Return stake (not slashed — arbiter failure, not hunter's fault)
         usdc.safeTransfer(sub.hunterWallet, sub.stake);
@@ -167,8 +178,13 @@ contract BugSubmission {
         sub.status = Status.Resolved;
         sub.isValid = false;
         _activeSubmissionCount[sub.bountyId][sub.hunterAgentId]--;
+        _pendingCountPerBounty[sub.bountyId]--;
 
         usdc.safeTransfer(sub.hunterWallet, sub.stake);
+    }
+
+    function getPendingCount(uint256 bountyId) external view returns (uint256) {
+        return _pendingCountPerBounty[bountyId];
     }
 
     function getSubmission(uint256 bugId) external view returns (Submission memory) {

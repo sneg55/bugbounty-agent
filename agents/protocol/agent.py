@@ -8,6 +8,8 @@ from web3 import Web3
 
 from common.config import RPC_URL, load_deployments
 from common.contracts import get_web3, get_all_contracts
+from common.crypto import decrypt
+from common.ipfs import download_json
 from protocol.risk_model import get_default_tiers, get_default_funding
 
 
@@ -82,9 +84,56 @@ def main():
         agent_id = deployments["agentIds"]["protocol"]
         create_bounty(w3, contracts, agent_id, args.name, args.scope_uri, args.deadline)
     elif args.command == "watch":
-        print("Watching for events... (Ctrl+C to stop)")
-        # Event watching implemented in Slice 5
+        print("Watching for SubmissionResolved and PatchGuidance events... (Ctrl+C to stop)")
+        ecies_key = os.getenv("PROTOCOL_ECIES_PRIVATE_KEY")
+        last_block = w3.eth.block_number
+
         while True:
+            current_block = w3.eth.block_number
+            if current_block > last_block:
+                # Poll SubmissionResolved events on BugSubmission contract
+                try:
+                    resolved_events = contracts["bugSubmission"].events.SubmissionResolved.get_logs(
+                        fromBlock=last_block + 1,
+                        toBlock=current_block,
+                    )
+                    for event in resolved_events:
+                        bug_id = event["args"]["bugId"]
+                        valid = event["args"].get("valid", False)
+                        severity = event["args"].get("severity", 0)
+                        print(f"\nSubmissionResolved: bug #{bug_id} | valid={valid} | severity={severity}")
+                except Exception as e:
+                    print(f"  [WARN] SubmissionResolved poll error: {e}")
+
+                # Poll PatchGuidance events on ArbiterContract
+                try:
+                    patch_events = contracts["arbiterContract"].events.PatchGuidance.get_logs(
+                        fromBlock=last_block + 1,
+                        toBlock=current_block,
+                    )
+                    for event in patch_events:
+                        bug_id = event["args"]["bugId"]
+                        cid = event["args"]["encryptedPatchCID"]
+                        print(f"\nPatchGuidance received for bug #{bug_id} (CID: {cid})")
+
+                        # Download and decrypt patch guidance
+                        try:
+                            encrypted_data = download_json(cid)
+                            encrypted_bytes = bytes.fromhex(encrypted_data["encrypted"])
+                            guidance = json.loads(decrypt(ecies_key.encode(), encrypted_bytes))
+
+                            print(f"  Affected functions: {guidance.get('affectedFunctions', [])}")
+                            for change in guidance.get("recommendedChanges", []):
+                                print(f"  - {change['function']}: {change['change']}")
+                            print("  Verification tests:")
+                            for test in guidance.get("verificationTests", []):
+                                print(f"  - {test}")
+                        except Exception as e:
+                            print(f"  [ERROR] Failed to decrypt patch guidance: {e}")
+                except Exception as e:
+                    print(f"  [WARN] PatchGuidance poll error: {e}")
+
+                last_block = current_block
             time.sleep(5)
 
 

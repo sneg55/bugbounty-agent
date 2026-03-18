@@ -7,26 +7,24 @@ import { CONTRACT_ADDRESSES, BUG_SUBMISSION_ABI, ARBITER_CONTRACT_ABI } from '..
 interface SubmissionData {
   bountyId: number
   hunterAgentId: string
-  stakeAmount: string
-  revealedCid: string
-  severityClaim: number
-  state: number
-  verdict: number
-  payoutAmount: string
+  stake: string
+  encryptedCID: string
+  claimedSeverity: number
+  status: number
+  finalSeverity: number
+  isValid: boolean
 }
 
-interface StateDiff {
-  reqHash: string
-  stateDiffCid: string
-  registered: boolean
+interface ArbitrationData {
+  stateImpactCID: string
+  validationRequestHash: string
+  jurors: string[]
+  revealedSeverities: number[]
+  revealed: boolean[]
+  revealCount: number
+  phase: number
 }
 
-interface JurorVote {
-  jurorId: string
-  committed: boolean
-  revealed: boolean
-  revealedSeverity: number
-}
 
 const SEVERITY_LABELS: Record<number, string> = { 0: 'None', 1: 'Low', 2: 'Medium', 3: 'High', 4: 'Critical' }
 const SEVERITY_COLORS: Record<number, string> = {
@@ -50,16 +48,16 @@ async function fetchSubmission(bugId: number): Promise<SubmissionData> {
   return {
     bountyId: Number(s.bountyId),
     hunterAgentId: s.hunterAgentId.toString(),
-    stakeAmount: ethers.formatUnits(s.stakeAmount, 6),
-    revealedCid: s.revealedCid,
-    severityClaim: Number(s.severityClaim),
-    state: Number(s.state),
-    verdict: Number(s.verdict),
-    payoutAmount: ethers.formatUnits(s.payoutAmount, 6),
+    stake: ethers.formatUnits(s.stake, 6),
+    encryptedCID: s.encryptedCID,
+    claimedSeverity: Number(s.claimedSeverity),
+    status: Number(s.status),
+    finalSeverity: Number(s.finalSeverity),
+    isValid: s.isValid,
   }
 }
 
-async function fetchStateDiff(bugId: number): Promise<StateDiff | null> {
+async function fetchArbitration(bugId: number): Promise<ArbitrationData | null> {
   const provider = getProvider()
   const contract = new ethers.Contract(
     CONTRACT_ADDRESSES.arbiterContract,
@@ -67,40 +65,18 @@ async function fetchStateDiff(bugId: number): Promise<StateDiff | null> {
     provider,
   )
   try {
-    const d = await contract.getStateDiff(bugId)
+    const a = await contract.getArbitration(bugId)
     return {
-      reqHash: d.reqHash,
-      stateDiffCid: d.stateDiffCid,
-      registered: d.registered,
+      stateImpactCID: a.stateImpactCID,
+      validationRequestHash: ethers.hexlify(a.validationRequestHash),
+      jurors: (a.jurors as bigint[]).map((j) => j.toString()),
+      revealedSeverities: (a.revealedSeverities as bigint[]).map((v) => Number(v)),
+      revealed: Array.from(a.revealed as boolean[]),
+      revealCount: Number(a.revealCount),
+      phase: Number(a.phase),
     }
   } catch {
     return null
-  }
-}
-
-async function fetchJuryVotes(bugId: number): Promise<JurorVote[]> {
-  const provider = getProvider()
-  const contract = new ethers.Contract(
-    CONTRACT_ADDRESSES.arbiterContract,
-    ARBITER_CONTRACT_ABI,
-    provider,
-  )
-  try {
-    const jury: bigint[] = await contract.getJury(bugId)
-    const votes: JurorVote[] = await Promise.all(
-      jury.map(async (jurorId) => {
-        const v = await contract.getVote(bugId, jurorId)
-        return {
-          jurorId: jurorId.toString(),
-          committed: v.committed,
-          revealed: v.revealed,
-          revealedSeverity: Number(v.revealedSeverity),
-        }
-      }),
-    )
-    return votes
-  } catch {
-    return []
   }
 }
 
@@ -163,16 +139,9 @@ export default function SubmissionDetailPage() {
     refetchInterval: 15_000,
   })
 
-  const { data: stateDiff } = useQuery({
-    queryKey: ['state-diff', id],
-    queryFn: () => fetchStateDiff(id),
-    enabled: arbiterEnabled,
-    refetchInterval: 15_000,
-  })
-
-  const { data: juryVotes } = useQuery({
-    queryKey: ['jury-votes', id],
-    queryFn: () => fetchJuryVotes(id),
+  const { data: arbitration } = useQuery({
+    queryKey: ['arbitration', id],
+    queryFn: () => fetchArbitration(id),
     enabled: arbiterEnabled,
     refetchInterval: 15_000,
   })
@@ -207,7 +176,7 @@ export default function SubmissionDetailPage() {
 
       {submission && (
         <>
-          <PipelineProgress state={submission.state} />
+          <PipelineProgress state={submission.status} />
 
           {/* Submission metadata */}
           <div className="rounded-lg border border-gray-800 bg-gray-900 p-4 mb-6">
@@ -223,54 +192,54 @@ export default function SubmissionDetailPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-400">Stake</span>
-                <span className="font-mono">{submission.stakeAmount} USDC</span>
+                <span className="font-mono">{submission.stake} USDC</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-400">Severity Claim</span>
                 <span
                   className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                    SEVERITY_COLORS[submission.severityClaim] ?? 'bg-gray-700 text-gray-300'
+                    SEVERITY_COLORS[submission.claimedSeverity] ?? 'bg-gray-700 text-gray-300'
                   }`}
                 >
-                  {SEVERITY_LABELS[submission.severityClaim] ?? 'Unknown'}
+                  {SEVERITY_LABELS[submission.claimedSeverity] ?? 'Unknown'}
                 </span>
               </div>
-              {submission.revealedCid && (
+              {submission.encryptedCID && (
                 <div className="flex justify-between col-span-2">
                   <span className="text-gray-400">Report CID</span>
                   <a
-                    href={`https://ipfs.io/ipfs/${submission.revealedCid.replace('ipfs://', '')}`}
+                    href={`https://ipfs.io/ipfs/${submission.encryptedCID.replace('ipfs://', '')}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="font-mono text-blue-400 hover:text-blue-300 truncate max-w-xs"
                   >
-                    {submission.revealedCid}
+                    {submission.encryptedCID}
                   </a>
                 </div>
               )}
             </div>
           </div>
 
-          {/* State diff */}
-          {stateDiff && stateDiff.registered && (
+          {/* Arbitration: state impact and jury votes */}
+          {arbitration && arbitration.stateImpactCID && (
             <div className="rounded-lg border border-gray-800 bg-gray-900 p-4 mb-6">
               <h3 className="text-sm font-medium text-gray-400 mb-3">State Impact</h3>
               <div className="text-sm space-y-2">
                 <div className="flex justify-between">
-                  <span className="text-gray-400">Request Hash</span>
+                  <span className="text-gray-400">Validation Request Hash</span>
                   <span className="font-mono text-xs text-gray-300 truncate max-w-xs">
-                    {stateDiff.reqHash}
+                    {arbitration.validationRequestHash}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-400">State Diff CID</span>
+                  <span className="text-gray-400">State Impact CID</span>
                   <a
-                    href={`https://ipfs.io/ipfs/${stateDiff.stateDiffCid.replace('ipfs://', '')}`}
+                    href={`https://ipfs.io/ipfs/${arbitration.stateImpactCID.replace('ipfs://', '')}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="font-mono text-blue-400 hover:text-blue-300 truncate max-w-xs text-xs"
                   >
-                    {stateDiff.stateDiffCid}
+                    {arbitration.stateImpactCID}
                   </a>
                 </div>
                 <div className="mt-3 rounded border border-green-800 bg-green-900/10 p-2 text-xs text-green-400">
@@ -281,37 +250,33 @@ export default function SubmissionDetailPage() {
           )}
 
           {/* Jury votes */}
-          {juryVotes && juryVotes.length > 0 && (
+          {arbitration && arbitration.jurors.some((j) => j !== '0') && (
             <div className="rounded-lg border border-gray-800 bg-gray-900 p-4 mb-6">
-              <h3 className="text-sm font-medium text-gray-400 mb-3">Arbiter Votes</h3>
+              <h3 className="text-sm font-medium text-gray-400 mb-3">
+                Arbiter Votes ({arbitration.revealCount} / {arbitration.jurors.length} revealed)
+              </h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {juryVotes.map((vote) => (
+                {arbitration.jurors.map((jurorId, idx) => (
                   <div
-                    key={vote.jurorId}
+                    key={jurorId + idx}
                     className="rounded border border-gray-700 bg-gray-800 p-3 text-sm"
                   >
-                    <p className="font-mono text-gray-400 text-xs mb-2">Juror #{vote.jurorId}</p>
+                    <p className="font-mono text-gray-400 text-xs mb-2">Juror #{jurorId}</p>
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <span
-                          className={`h-2 w-2 rounded-full ${vote.committed ? 'bg-green-400' : 'bg-gray-600'}`}
-                        />
-                        <span className="text-xs text-gray-300">Committed</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`h-2 w-2 rounded-full ${vote.revealed ? 'bg-green-400' : 'bg-gray-600'}`}
+                          className={`h-2 w-2 rounded-full ${arbitration.revealed[idx] ? 'bg-green-400' : 'bg-gray-600'}`}
                         />
                         <span className="text-xs text-gray-300">Revealed</span>
                       </div>
-                      {vote.revealed && (
+                      {arbitration.revealed[idx] && (
                         <div className="mt-2">
                           <span
                             className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                              SEVERITY_COLORS[vote.revealedSeverity] ?? 'bg-gray-700 text-gray-300'
+                              SEVERITY_COLORS[arbitration.revealedSeverities[idx]] ?? 'bg-gray-700 text-gray-300'
                             }`}
                           >
-                            {SEVERITY_LABELS[vote.revealedSeverity] ?? 'Unknown'}
+                            {SEVERITY_LABELS[arbitration.revealedSeverities[idx]] ?? 'Unknown'}
                           </span>
                         </div>
                       )}
@@ -323,10 +288,10 @@ export default function SubmissionDetailPage() {
           )}
 
           {/* Verdict */}
-          {submission.state >= 4 && (
+          {submission.status >= 2 && (
             <div
               className={`rounded-lg border p-4 ${
-                submission.verdict > 0
+                submission.isValid
                   ? 'border-green-800 bg-green-900/20'
                   : 'border-red-800 bg-red-900/20'
               }`}
@@ -335,18 +300,13 @@ export default function SubmissionDetailPage() {
               <div className="flex items-center justify-between">
                 <span
                   className={`text-lg font-bold ${
-                    submission.verdict > 0 ? 'text-green-400' : 'text-red-400'
+                    submission.isValid ? 'text-green-400' : 'text-red-400'
                   }`}
                 >
-                  {submission.verdict > 0
-                    ? `Valid — ${SEVERITY_LABELS[submission.verdict] ?? 'Unknown'}`
+                  {submission.isValid
+                    ? `Valid — ${SEVERITY_LABELS[submission.finalSeverity] ?? 'Unknown'}`
                     : 'Invalid / Rejected'}
                 </span>
-                {submission.verdict > 0 && (
-                  <span className="font-mono font-bold text-green-400 text-lg">
-                    +{submission.payoutAmount} USDC
-                  </span>
-                )}
               </div>
             </div>
           )}

@@ -104,6 +104,7 @@ export default function LiveFeedPage() {
   const [isPolling, setIsPolling] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const lastBlockRef = useRef(0)
 
   const enabled =
     Boolean(CONTRACT_ADDRESSES.bountyRegistry) ||
@@ -119,11 +120,20 @@ export default function LiveFeedPage() {
       setIsPolling(true)
       try {
         const provider = getProvider()
-        const latest = await provider.getBlockNumber()
-        const fromBlock = Math.max(0, latest - 500) // last ~500 blocks
+        const currentBlock = await provider.getBlockNumber()
+        // First load: query last 50 blocks; subsequent polls: only new blocks
+        const fromBlock = lastBlockRef.current
+          ? lastBlockRef.current + 1
+          : Math.max(0, currentBlock - 50)
         const fetched = await fetchRecentEvents(fromBlock)
+        lastBlockRef.current = currentBlock
         if (!cancelled) {
-          setEvents(fetched)
+          setEvents((prev) => {
+            const existingIds = new Set(prev.map((e) => e.id))
+            const newEvents = fetched.filter((e) => !existingIds.has(e.id))
+            if (newEvents.length === 0) return prev
+            return [...prev, ...newEvents].sort((a, b) => b.blockNumber - a.blockNumber)
+          })
           setError(null)
         }
       } catch (err) {
@@ -175,7 +185,7 @@ export default function LiveFeedPage() {
 
       <div className="flex-1 overflow-y-auto space-y-2 pr-1">
         {events.length === 0 && !isPolling && enabled && (
-          <p className="text-gray-500 text-sm">No events found in the last 500 blocks.</p>
+          <p className="text-gray-500 text-sm">No events found in the last 50 blocks.</p>
         )}
 
         {events.map((event) => (

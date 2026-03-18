@@ -6,22 +6,10 @@ import { CONTRACT_ADDRESSES, BOUNTY_REGISTRY_ABI } from '../contracts'
 
 interface Bounty {
   id: number
-  agentId: string
+  protocolAgentId: string
   name: string
-  maxPayout: string
-  status: number
-}
-
-const STATUS_LABELS: Record<number, string> = {
-  0: 'Active',
-  1: 'Paused',
-  2: 'Closed',
-}
-
-const STATUS_COLORS: Record<number, string> = {
-  0: 'text-green-400',
-  1: 'text-yellow-400',
-  2: 'text-gray-400',
+  totalFunding: string
+  active: boolean
 }
 
 async function fetchBounties(): Promise<Bounty[]> {
@@ -32,7 +20,7 @@ async function fetchBounties(): Promise<Bounty[]> {
     provider,
   )
 
-  const count = await contract.bountyCount()
+  const count = await contract.getBountyCount()
   const total = Number(count)
   const bounties: Bounty[] = []
 
@@ -40,10 +28,10 @@ async function fetchBounties(): Promise<Bounty[]> {
     const b = await contract.getBounty(i)
     bounties.push({
       id: i,
-      agentId: b.agentId.toString(),
+      protocolAgentId: b.protocolAgentId.toString(),
       name: b.name,
-      maxPayout: ethers.formatUnits(b.totalPool, 6),
-      status: Number(b.status),
+      totalFunding: ethers.formatUnits(b.totalFunding, 6),
+      active: b.active,
     })
   }
 
@@ -94,8 +82,8 @@ export default function BountiesPage() {
               <tr className="border-b border-gray-800 text-gray-400 text-left">
                 <th className="pb-3 pr-4">ID</th>
                 <th className="pb-3 pr-4">Name</th>
-                <th className="pb-3 pr-4">Agent</th>
-                <th className="pb-3 pr-4">Pool</th>
+                <th className="pb-3 pr-4">Protocol Agent</th>
+                <th className="pb-3 pr-4">Total Funding</th>
                 <th className="pb-3">Status</th>
               </tr>
             </thead>
@@ -111,11 +99,11 @@ export default function BountiesPage() {
                       {b.name}
                     </Link>
                   </td>
-                  <td className="py-3 pr-4 font-mono text-gray-400">Agent #{b.agentId}</td>
-                  <td className="py-3 pr-4 font-mono">{b.maxPayout} USDC</td>
+                  <td className="py-3 pr-4 font-mono text-gray-400">Agent #{b.protocolAgentId}</td>
+                  <td className="py-3 pr-4 font-mono">{b.totalFunding} USDC</td>
                   <td className="py-3">
-                    <span className={STATUS_COLORS[b.status] ?? 'text-gray-400'}>
-                      {STATUS_LABELS[b.status] ?? 'Unknown'}
+                    <span className={b.active ? 'text-green-400' : 'text-gray-400'}>
+                      {b.active ? 'Active' : 'Closed'}
                     </span>
                   </td>
                 </tr>
