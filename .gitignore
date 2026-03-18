@@ -1,0 +1,9 @@
+.env
+deployments.json
+__pycache__/
+*.pyc
+contracts/out/
+contracts/cache/
+node_modules/
+dashboard/dist/
+.venv/
