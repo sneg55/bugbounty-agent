@@ -164,10 +164,10 @@ Manages arbiter pool, jury selection, blind voting, median resolution, patch gui
 - `registerArbiter(uint256 arbiterAgentId)` — arbiter self-registers into the pool. Validates agent exists in IdentityRegistry and caller is token owner. Emits `ArbiterRegistered`.
 - `unregisterArbiter(uint256 arbiterAgentId)` — removes from pool.
 - `registerStateImpact(uint256 bugId, bytes32 requestHash, string calldata stateImpactCID)` — callable by authorized executor, checks ValidationRegistry, triggers `selectJury()`, emits `StateImpactRegistered`
-- `selectJury(uint256 bugId)` — internal. Iterates `arbiterPool`, scores each by `ReputationRegistry.getFeedbackCount(agentId, "consensus_aligned")`, excludes agents sharing owner with hunter or protocol agent (via `IdentityRegistry.ownerOf()`), selects top 3. Sets `commitDeadlineBlock = block.number + 50`. Emits `JurySelected`.
+- `selectJury(uint256 bugId)` — internal. Iterates `arbiterPool`, scores each by `ReputationRegistry.getFeedbackCount(agentId, "consensus_aligned")`, excludes agents sharing owner with hunter or protocol agent (via `IdentityRegistry.ownerOf()`), selects top 3. Reverts if fewer than 3 eligible arbiters available. Sets `commitDeadlineBlock = block.number + 50`. Emits `JurySelected`.
 - `commitVote(uint256 bugId, bytes32 voteHash)` — must be selected juror, must be before commitDeadlineBlock
 - `revealVote(uint256 bugId, uint8 severity, bytes32 salt)` — verifies `keccak256(abi.encode(severity, salt)) == voteHash`. Must be before revealDeadlineBlock (commitDeadlineBlock + 50). After all 3 reveal (or after revealDeadlineBlock if ≥2 revealed): calls `_resolve()`
-- `resolveWithTimeout(uint256 bugId)` — callable by anyone after revealDeadlineBlock. If 0 reveals: submission marked invalid, hunter stake returned (not slashed — arbiter failure, not hunter's fault). If 1 reveal: same as 0 (insufficient quorum). If 2 reveals: resolves with median of 2 votes. If 3 reveals: should have auto-resolved, no-op.
+- `resolveWithTimeout(uint256 bugId)` — callable by anyone after revealDeadlineBlock. If 0 reveals: submission marked invalid, hunter stake returned (not slashed — arbiter failure, not hunter's fault), non-revealing arbiters get negative reputation (-20, tag1: "vote_timeout"). If 1 reveal: same as 0 (insufficient quorum). If 2 reveals: resolves with `min(severity1, severity2)` (conservative — lower of the two), non-revealing arbiter gets -20 reputation. If 3 reveals: should have auto-resolved, no-op.
 - `_resolve(uint256 bugId)` — majority INVALID (0): slashes hunter. Otherwise: median of severity values → payout. Posts reputation feedback for hunter (+100/-100) and each arbiter (+10 aligned, -5 deviated). Emits `SubmissionResolved`
 - `registerPatchGuidance(uint256 bugId, string calldata encryptedPatchCID)` — callable by authorized executor. Can only be called after submission resolved as valid with severity ≥ HIGH. Emits `PatchGuidance(uint256 bugId, string encryptedPatchCID)`.
 
@@ -386,7 +386,7 @@ Three intentionally buggy contracts deployed on Base Sepolia.
 2. Mint agent IDs (1 protocol, 1 hunter, 3 arbiters, 1 executor) + register metadata + fund hunter wallet with 1,000 MockUSDC for staking + fund protocol wallet with 50,000 MockUSDC for bounty. Register 3 arbiters in ArbiterContract pool.
 3. Protocol Agent creates bounty — 50,000 MockUSDC targeting the 3 vulnerable contracts
 4. Hunter Agent scans → Slither finds reentrancy + access control → LLM reasons → generates PoCs
-5. Hunter commits first finding (ReentrancyVault), waits 50 blocks, reveals
+5. Hunter commits first finding (ReentrancyVault), waits for commit confirmation, reveals immediately
 6. Executor forks → runs PoC → vault drained → State Impact JSON → registers on-chain
 7. 3 Arbiters selected → evaluate via Venice → blind commit → reveal → median = CRITICAL → 25,000 MockUSDC payout
 8. Executor generates patch guidance via Venice → encrypted to Protocol Agent → "Add nonReentrant modifier"
