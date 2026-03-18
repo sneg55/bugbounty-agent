@@ -138,6 +138,7 @@ def hex_pad32(val: str) -> str:
 def deploy_contracts(rpc_url: str, deployer_key: str) -> dict:
     print_section("Step 1: Deploying contracts")
 
+    env = {**os.environ, "DEPLOYER_PRIVATE_KEY": deployer_key}
     result = subprocess.run(
         [
             "forge", "script", "script/Deploy.s.sol:Deploy",
@@ -148,6 +149,7 @@ def deploy_contracts(rpc_url: str, deployer_key: str) -> dict:
         cwd=str(CONTRACTS_DIR),
         capture_output=True,
         text=True,
+        env=env,
     )
     if result.returncode != 0:
         print("[ERROR] forge script failed:")
@@ -320,15 +322,13 @@ def hunter_commit_reveal(addrs: dict, agent_ids: dict, bounty_id: int, rpc_url: 
     salt_hex = "0x" + "huntersalt".encode().hex().ljust(64, "0")
     # commitHash = keccak256(abi.encode(encryptedCID, hunterAgentId, salt))
     # Build via cast
+    encoded = run(
+        ["cast", "abi-encode", "f(string,uint256,bytes32)",
+         encrypted_cid, str(hunter_agent_id), salt_hex],
+        cwd=str(CONTRACTS_DIR),
+    ).strip()
     commit_hash = run(
-        [
-            "cast", "keccak",
-            run(
-                ["cast", "abi-encode", "(string,uint256,bytes32)",
-                 encrypted_cid, str(hunter_agent_id), salt_hex],
-                cwd=str(CONTRACTS_DIR),
-            ).strip(),
-        ],
+        ["cast", "keccak", encoded],
         cwd=str(CONTRACTS_DIR),
     ).strip()
 
@@ -410,7 +410,7 @@ def arbiters_vote(addrs: dict, agent_ids: dict, bug_id: int, rpc_url: str) -> No
     for i, (role, key, sev, salt) in enumerate(zip(arb_roles, arb_keys, severities, salts)):
         # voteHash = keccak256(abi.encode(uint8(severity), bytes32(salt)))
         encoded = run(
-            ["cast", "abi-encode", "(uint8,bytes32)", str(sev), salt],
+            ["cast", "abi-encode", "f(uint8,bytes32)", str(sev), salt],
             cwd=str(CONTRACTS_DIR),
         ).strip()
         vote_hash = run(["cast", "keccak", encoded], cwd=str(CONTRACTS_DIR)).strip()
