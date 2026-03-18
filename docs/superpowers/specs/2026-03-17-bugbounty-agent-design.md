@@ -90,10 +90,10 @@ ERC-721 where each token represents an agent identity.
 
 Stores feedback entries linked to agent IDs. Authorized callers only (ArbiterContract).
 
-- `giveFeedback(uint256 targetAgentId, int256 value, string calldata tag1, string calldata tag2)` — post feedback
+- `giveFeedback(uint256 targetAgentId, int256 value, string calldata tag1, string calldata tag2)` — post feedback. Tags used by the system: tag1=`submission_valid`/`submission_invalid` (for hunters), tag1=`consensus_aligned`/`consensus_deviated` (for arbiters). tag2 = severity level string.
 - `getReputation(uint256 agentId) → int256` — net reputation (sum of all feedback values)
 - `getFeedbackCount(uint256 agentId, string calldata tag1) → uint256` — count by tag
-- `getValidityRate(uint256 agentId) → uint256` — percentage of valid submissions
+- `getValidityRate(uint256 agentId) → uint256` — returns `(validCount * 100) / (validCount + invalidCount)` where validCount = `getFeedbackCount(agentId, "submission_valid")` and invalidCount = `getFeedbackCount(agentId, "submission_invalid")`. Returns 0 if no submissions.
 
 ### ValidationRegistry.sol
 
@@ -116,14 +116,15 @@ Simple ERC-20 with public `mint(address to, uint256 amount)` for Base Sepolia te
 Manages bounty creation, USDC escrow, and fund withdrawal.
 
 **Storage:** `mapping(uint256 => Bounty)` — `Bounty` struct contains:
-- `protocolAgentId`, `name`, `scopeHash` (IPFS CID), `tiers` (struct: critical/high/medium/low in USDC), `totalFunding`, `totalPaid`, `deadline`, `minHunterReputation`, `active`
+- `protocolAgentId`, `name`, `scopeURI` (string, IPFS CID of in-scope contract list, e.g. `"ipfs://QmXYZ..."`), `tiers` (struct: critical/high/medium/low as uint256 in USDC base units), `totalFunding`, `totalPaid`, `deadline`, `minHunterReputation`, `active`, `submissionCount`
 
 **Functions:**
 - `createBounty(...)` — validates protocolAgentId via IdentityRegistry, transfers USDC to escrow, emits `BountyCreated`
 - `withdrawRemainder(uint256 bountyId)` — callable by protocol agent owner after deadline + gracePeriod, requires no pending submissions, transfers `totalFunding - totalPaid`
 - `deductPayout(uint256 bountyId, uint256 amount, address recipient)` — callable only by BugSubmission, transfers USDC to hunter, increments `totalPaid`
-- `getRemainingFunds(uint256 bountyId)` — view
-- `getBounty(uint256 bountyId)` — view
+- `getRemainingFunds(uint256 bountyId) → uint256` — view
+- `getBounty(uint256 bountyId) → Bounty` — view (returns full struct including submissionCount for dashboard)
+- `getBountyCount() → uint256` — view, total bounties created (for dashboard pagination)
 
 Grace period: 1800 seconds default.
 
@@ -136,7 +137,7 @@ Manages commit-reveal submissions and staking.
 
 **Functions:**
 - `commitBug(uint256 bountyId, bytes32 commitHash, uint256 hunterAgentId, uint8 claimedSeverity)` — validates hunter via IdentityRegistry, checks reputation for stake calculation via ReputationRegistry, enforces ≤3 active submissions per hunter per bounty, transfers stake, emits `BugCommitted`
-- `revealBug(uint256 commitId, string calldata encryptedCID, bytes32 salt)` — verifies `keccak256(abi.encodePacked(encryptedCID, hunterAgentId, salt)) == commitHash`, checks reveal window, emits `BugRevealed`
+- `revealBug(uint256 commitId, string calldata encryptedCID, bytes32 salt)` — verifies `keccak256(abi.encode(encryptedCID, hunterAgentId, salt)) == commitHash` (uses `abi.encode`, not `abi.encodePacked`, to avoid ambiguity with variable-length string). Hunter constructs the same hash client-side: `web3.solidity_keccak(['string', 'uint256', 'bytes32'], [encryptedCID, hunterAgentId, salt])`. Checks reveal window (commit block + 200 blocks). No minimum wait — hunter can reveal immediately after commit. Emits `BugRevealed`
 - `resolveSubmission(uint256 bugId, uint8 finalSeverity, bool isValid)` — callable only by ArbiterContract. Valid: returns stake + triggers `BountyRegistry.deductPayout()`. Invalid: slashes stake. Emits `SubmissionResolved`
 - `reclaimExpiredCommit(uint256 commitId)` — returns stake for commits past reveal window
 
@@ -153,19 +154,24 @@ Reveal window: 200 blocks from commit.
 
 ### ArbiterContract.sol
 
-Manages jury selection, blind voting, median resolution, and reputation feedback.
+Manages arbiter pool, jury selection, blind voting, median resolution, patch guidance registration, and reputation feedback.
 
-**Storage:** per-bug `Arbitration` struct:
-- `bugId`, `stateImpactCID`, `validationRequestHash`, `jurors[3]`, `commitHashes[3]`, `revealedSeverities[3]`, `revealed[3]`, `phase` (AwaitingStateImpact/Voting/Revealing/Resolved)
+**Storage:**
+- `uint256[] public arbiterPool` — registered arbiter agent IDs. Arbiters self-register via `registerArbiter()`.
+- Per-bug `Arbitration` struct: `bugId`, `stateImpactCID`, `validationRequestHash`, `jurors[3]`, `commitHashes[3]`, `revealedSeverities[3]`, `revealed[3]`, `revealCount`, `commitDeadlineBlock`, `revealDeadlineBlock`, `phase` (AwaitingStateImpact/Voting/Revealing/Resolved)
 
 **Functions:**
+- `registerArbiter(uint256 arbiterAgentId)` — arbiter self-registers into the pool. Validates agent exists in IdentityRegistry and caller is token owner. Emits `ArbiterRegistered`.
+- `unregisterArbiter(uint256 arbiterAgentId)` — removes from pool.
 - `registerStateImpact(uint256 bugId, bytes32 requestHash, string calldata stateImpactCID)` — callable by authorized executor, checks ValidationRegistry, triggers `selectJury()`, emits `StateImpactRegistered`
-- `selectJury(uint256 bugId)` — internal, queries ReputationRegistry for top 3 arbiters by consensus_aligned count, excludes agents sharing owner with hunter/protocol, emits `JurySelected`
-- `commitVote(uint256 bugId, bytes32 voteHash)` — must be selected juror
-- `revealVote(uint256 bugId, uint8 severity, bytes32 salt)` — verifies hash. After all 3: calls `_resolve()`
-- `_resolve(uint256 bugId)` — majority INVALID (0): slashes hunter. Otherwise: median of 3 severity values → payout. Posts reputation feedback for hunter (+100/-100) and each arbiter (+10 aligned, -5 deviated). Emits `SubmissionResolved`
+- `selectJury(uint256 bugId)` — internal. Iterates `arbiterPool`, scores each by `ReputationRegistry.getFeedbackCount(agentId, "consensus_aligned")`, excludes agents sharing owner with hunter or protocol agent (via `IdentityRegistry.ownerOf()`), selects top 3. Sets `commitDeadlineBlock = block.number + 50`. Emits `JurySelected`.
+- `commitVote(uint256 bugId, bytes32 voteHash)` — must be selected juror, must be before commitDeadlineBlock
+- `revealVote(uint256 bugId, uint8 severity, bytes32 salt)` — verifies `keccak256(abi.encode(severity, salt)) == voteHash`. Must be before revealDeadlineBlock (commitDeadlineBlock + 50). After all 3 reveal (or after revealDeadlineBlock if ≥2 revealed): calls `_resolve()`
+- `resolveWithTimeout(uint256 bugId)` — callable by anyone after revealDeadlineBlock. If 0 reveals: submission marked invalid, hunter stake returned (not slashed — arbiter failure, not hunter's fault). If 1 reveal: same as 0 (insufficient quorum). If 2 reveals: resolves with median of 2 votes. If 3 reveals: should have auto-resolved, no-op.
+- `_resolve(uint256 bugId)` — majority INVALID (0): slashes hunter. Otherwise: median of severity values → payout. Posts reputation feedback for hunter (+100/-100) and each arbiter (+10 aligned, -5 deviated). Emits `SubmissionResolved`
+- `registerPatchGuidance(uint256 bugId, string calldata encryptedPatchCID)` — callable by authorized executor. Can only be called after submission resolved as valid with severity ≥ HIGH. Emits `PatchGuidance(uint256 bugId, string encryptedPatchCID)`.
 
-Voting windows: 50 blocks for commits, 50 blocks for reveals. Simplified backup: resolve with 2 votes if one arbiter misses window.
+Voting windows: 50 blocks for commits, 50 blocks for reveals (100 blocks total from state impact registration).
 
 **Contract-to-contract dependencies:**
 ```
@@ -208,7 +214,7 @@ Venice free tier (10 prompts/day) sufficient for integration testing. Pro ($18/m
 - `inference.py` — Venice/OpenAI wrapper (see Section 3)
 - `contracts.py` — Loads Foundry ABI artifacts from `contracts/out/`, typed Python wrappers via web3.py. Each agent has its own wallet (private key from env).
 - `ipfs.py` — Upload/download via Pinata HTTP API (free tier). Returns CIDs.
-- `crypto.py` — ECIES encrypt/decrypt via `eciespy`. Hunter encrypts with Executor pubkey (from IdentityRegistry metadata). Executor decrypts with its private key.
+- `crypto.py` — ECIES encrypt/decrypt via `eciespy` (secp256k1 keys). ECIES keys are separate from Ethereum wallet keys. Keypairs generated once at setup, private keys stored in `.env`, public keys published on-chain via `IdentityRegistry.setMetadata(agentId, "eciesPubKey", pubKeyBytes)`. Hunter fetches Executor's public key from chain to encrypt submissions. Executor fetches Protocol Agent's public key to encrypt patch guidance.
 
 ### Protocol Agent (`agents/protocol/`)
 
@@ -226,7 +232,7 @@ Event-driven: watches `BountyCreated`, runs analysis pipeline, submits findings.
 - `scanner.py` — Runs Slither on target contracts (from IPFS scopeHash). Parses JSON output for findings ≥ medium.
 - `reasoning.py` — Sends Slither findings + contract source to Venice. Returns structured analysis with exploit feasibility.
 - `poc_generator.py` — LLM generates full Foundry test script from analysis. Validates compilation before submitting.
-- `submitter.py` — Encrypt (Executor pubkey) → IPFS upload → commitBug → wait 50 blocks → revealBug.
+- `submitter.py` — Encrypt (Executor pubkey) → IPFS upload → commitBug (hash = `keccak256(abi.encode(encryptedCID, hunterAgentId, salt))`) → wait 1+ blocks → revealBug. No minimum wait enforced by contract; hunter reveals as soon as commit is confirmed.
 
 ### Executor Service (`agents/executor/`)
 
@@ -236,7 +242,7 @@ Triggered by `BugRevealed` events. Trusted infrastructure.
 - `fork_runner.py` — `forge test --fork-url <rpc> --fork-block-number <N>` with hunter's PoC. Captures pass/fail + gas.
 - `state_diff.py` — Compares pre/post state from fork execution. Produces State Impact JSON (balance changes, storage changes, impact flags).
 - `abi_resolver.py` — Labels storage slots/addresses from known ABIs. For demo: our own deployed contract ABIs.
-- `patch_guidance.py` — For valid CRITICAL/HIGH: sends PoC + source + diff to Venice with remediation prompt. Encrypts output with Protocol Agent pubkey. Uploads to IPFS. Emits `PatchGuidance` event.
+- `patch_guidance.py` — For valid CRITICAL/HIGH: sends PoC + source + diff to Venice with remediation prompt. Encrypts output with Protocol Agent pubkey. Uploads to IPFS. Calls `ArbiterContract.registerPatchGuidance(bugId, encryptedPatchCID)` which emits `PatchGuidance` event.
 
 ### Arbiter Agents (3x) (`agents/arbiter/`)
 
@@ -283,7 +289,7 @@ The only input arbiters receive. Produced by the Executor from fork execution.
   "bugId": 804,
   "bountyId": 12,
   "hunterAgentId": 42,
-  "claimedSeverity": "CRITICAL",
+  "claimedSeverity": 4,
   "execution": {
     "targetContract": "0x...",
     "forkBlock": 19234567,
@@ -330,6 +336,9 @@ The only input arbiters receive. Produced by the Executor from fork execution.
 
 Arbiters never see hunter prose, PoC source, or any hunter-authored text. This is the prompt-injection firewall.
 
+**Severity enum mapping (used consistently across contracts, agents, and State Impact JSON):**
+`0 = INVALID, 1 = LOW, 2 = MEDIUM, 3 = HIGH, 4 = CRITICAL`
+
 ## Section 7: Web Dashboard
 
 React + Vite + TypeScript + ethers.js + Tailwind CSS. Read-only, no wallet connection. Polls Base Sepolia RPC every 5 seconds.
@@ -357,6 +366,7 @@ React + Vite + TypeScript + ethers.js + Tailwind CSS. Read-only, no wallet conne
 - ethers.js provider + React Query for caching
 - Contract ABIs copied from Foundry artifacts at build time
 - No backend, no Redux, no wallet connection
+- **Incremental event indexing:** track last-seen block in React Query cache, only query new blocks on each poll. Aggregated data (submission count, remaining funds, reputation scores) read from contract view functions, not reconstructed from events.
 
 ## Section 8: Vulnerable Demo Contracts
 
@@ -373,7 +383,7 @@ Three intentionally buggy contracts deployed on Base Sepolia.
 `scripts/demo_flow.py` orchestrates the full lifecycle:
 
 1. Deploy all contracts (ERC-8004 registries, core contracts, MockUSDC, vulnerable contracts)
-2. Mint agent IDs (1 protocol, 1 hunter, 3 arbiters, 1 executor) + register metadata
+2. Mint agent IDs (1 protocol, 1 hunter, 3 arbiters, 1 executor) + register metadata + fund hunter wallet with 1,000 MockUSDC for staking + fund protocol wallet with 50,000 MockUSDC for bounty. Register 3 arbiters in ArbiterContract pool.
 3. Protocol Agent creates bounty — 50,000 MockUSDC targeting the 3 vulnerable contracts
 4. Hunter Agent scans → Slither finds reentrancy + access control → LLM reasons → generates PoCs
 5. Hunter commits first finding (ReentrancyVault), waits 50 blocks, reveals
@@ -403,6 +413,67 @@ Three intentionally buggy contracts deployed on Base Sepolia.
 ### End-to-End
 
 `demo_flow.py` is the E2E test. Assertions at each step. All agent tests touching the chain run against local Anvil with deployed contracts. No contract mocking in Python.
+
+## Section 11: Environment Variables
+
+All agents read from a `.env` file. Deploy script writes a `deployments.json` with contract addresses that agents and dashboard load.
+
+```bash
+# .env.example
+
+# Chain
+RPC_URL=https://sepolia.base.org
+CHAIN_ID=84532
+
+# Agent private keys (each agent has its own wallet)
+PROTOCOL_AGENT_PRIVATE_KEY=0x...
+HUNTER_AGENT_PRIVATE_KEY=0x...
+ARBITER_1_PRIVATE_KEY=0x...
+ARBITER_2_PRIVATE_KEY=0x...
+ARBITER_3_PRIVATE_KEY=0x...
+EXECUTOR_PRIVATE_KEY=0x...
+
+# ECIES keys (separate from Ethereum keys, secp256k1)
+# Generated once via: python -c "from ecies import generate_eth_key; k=generate_eth_key(); print(k.to_hex(), k.public_key.to_hex())"
+# Executor's ECIES private key (for decrypting submissions)
+EXECUTOR_ECIES_PRIVATE_KEY=0x...
+# Protocol Agent's ECIES private key (for decrypting patch guidance)
+PROTOCOL_ECIES_PRIVATE_KEY=0x...
+# Public keys are stored on-chain via IdentityRegistry.setMetadata()
+
+# Inference (Venice)
+INFERENCE_BASE_URL=https://api.venice.ai/api/v1
+INFERENCE_API_KEY=...
+INFERENCE_MODEL=llama-3.3-70b
+
+# IPFS (Pinata)
+PINATA_API_KEY=...
+PINATA_SECRET_KEY=...
+
+# Contract addresses (auto-populated by deploy script into deployments.json)
+# DEPLOYMENTS_FILE=./deployments.json
+```
+
+`deployments.json` (written by deploy script, read by agents + dashboard):
+```json
+{
+  "identityRegistry": "0x...",
+  "reputationRegistry": "0x...",
+  "validationRegistry": "0x...",
+  "bountyRegistry": "0x...",
+  "bugSubmission": "0x...",
+  "arbiterContract": "0x...",
+  "mockUSDC": "0x...",
+  "agentIds": {
+    "protocol": 1,
+    "hunter": 2,
+    "arbiter1": 3,
+    "arbiter2": 4,
+    "arbiter3": 5,
+    "executor": 6
+  }
+}
+```
 
 ## Build Order (Vertical Slices)
 
