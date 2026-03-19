@@ -26,21 +26,21 @@ interface Submission {
   payoutAmount: string
 }
 
-const SEVERITY_LABELS: Record<number, string> = { 0: 'None', 1: 'Low', 2: 'Medium', 3: 'High', 4: 'Critical' }
+const SEVERITY_LABELS: Record<number, string> = { 0: 'NONE', 1: 'LOW', 2: 'MEDIUM', 3: 'HIGH', 4: 'CRITICAL' }
 const SEVERITY_COLORS: Record<number, string> = {
-  0: 'text-gray-400',
-  1: 'text-blue-400',
-  2: 'text-yellow-400',
-  3: 'text-orange-400',
-  4: 'text-red-400',
+  0: '#6b7280',
+  1: '#06b6d4',
+  2: '#f59e0b',
+  3: '#f97316',
+  4: '#ef4444',
 }
 const STATE_LABELS: Record<number, string> = {
-  0: 'Committed',
-  1: 'Revealed',
-  2: 'Executing',
-  3: 'Arbitrating',
-  4: 'Resolved',
-  5: 'Rejected',
+  0: 'COMMITTED',
+  1: 'REVEALED',
+  2: 'EXECUTING',
+  3: 'ARBITRATING',
+  4: 'RESOLVED',
+  5: 'REJECTED',
 }
 
 async function fetchBountyDetail(bountyId: number): Promise<BountyDetail> {
@@ -112,108 +112,139 @@ export default function BountyDetailPage() {
   })
 
   return (
-    <div className="p-6">
-      <div className="mb-4">
-        <Link to="/bounties" className="text-blue-400 hover:text-blue-300 text-sm">
-          &larr; Back to Bounties
+    <div className="max-w-6xl mx-auto px-6 py-8">
+      <div className="mb-6">
+        <Link to="/bounties" className="text-xs text-[#06b6d4] hover:text-white transition-colors duration-150 uppercase tracking-tight">
+          &larr; BACK TO BOUNTIES
         </Link>
       </div>
 
       {!enabled && (
-        <div className="rounded-lg border border-yellow-700 bg-yellow-900/20 p-4 text-yellow-300 text-sm mb-4">
-          Contract address not configured.
+        <div className="border border-[#f59e0b] p-4 text-[#f59e0b] text-xs mb-6" style={{ borderRadius: 0 }}>
+          CONTRACT ADDRESS NOT CONFIGURED.
         </div>
       )}
 
       {loadingBounty && (
-        <div className="flex items-center gap-2 text-gray-400 mb-6">
-          <div className="h-4 w-4 rounded-full border-2 border-gray-600 border-t-blue-400 animate-spin" />
-          Loading bounty...
+        <div className="flex items-center gap-2 text-[#6b7280] text-xs mb-6">
+          <span className="inline-block w-2 h-2 bg-[#10b981] animate-pulse" style={{ borderRadius: 0 }} />
+          LOADING BOUNTY...
         </div>
       )}
 
       {bounty && (
-        <div className="mb-8">
-          <h2 className="text-2xl font-bold mb-1">{bounty.name}</h2>
-          <p className="text-gray-400 text-sm mb-4">
-            Protocol Agent #{bounty.agentId} &bull; Deadline:{' '}
-            {new Date(bounty.deadline * 1000).toLocaleDateString()}
-          </p>
+        <div className="mb-10">
+          <h1
+            className="font-extrabold uppercase text-white mb-6"
+            style={{ fontSize: 'clamp(1.5rem, 3vw, 2.5rem)', letterSpacing: '-0.05em' }}
+          >
+            {bounty.name}
+          </h1>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+          {/* Reward tiers */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-[#333] mb-8">
             {[
-              { label: 'Critical', value: bounty.criticalReward },
-              { label: 'High', value: bounty.highReward },
-              { label: 'Medium', value: bounty.mediumReward },
-              { label: 'Low', value: bounty.lowReward },
-            ].map(({ label, value }) => (
-              <div key={label} className="rounded-lg border border-gray-800 bg-gray-900 p-3">
-                <p className="text-xs text-gray-400">{label}</p>
-                <p className="text-lg font-bold font-mono">{value} USDC</p>
+              { label: 'CRITICAL', value: bounty.criticalReward, color: '#ef4444' },
+              { label: 'HIGH', value: bounty.highReward, color: '#f97316' },
+              { label: 'MEDIUM', value: bounty.mediumReward, color: '#f59e0b' },
+              { label: 'LOW', value: bounty.lowReward, color: '#06b6d4' },
+            ].map(({ label, value, color }) => (
+              <div key={label} className="bg-black p-4" style={{ borderRadius: 0 }}>
+                <p className="text-xs uppercase tracking-tight mb-2" style={{ color }}>{label}</p>
+                <p className="text-xl font-extrabold text-white">{value}</p>
+                <p className="text-xs text-[#6b7280] mt-0.5">USDC</p>
               </div>
             ))}
           </div>
 
-          <div className="rounded-lg border border-gray-800 bg-gray-900 p-4 text-sm">
-            <div className="flex justify-between mb-2">
-              <span className="text-gray-400">Total Pool</span>
-              <span className="font-mono font-bold">{bounty.totalPool} USDC</span>
+          {/* Metadata key-value grid */}
+          <div className="border border-[#333]" style={{ borderRadius: 0 }}>
+            <div className="border-b border-[#333] px-4 py-2">
+              <span className="text-xs font-extrabold uppercase tracking-tight text-[#6b7280]">METADATA</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-gray-400">Scope CID</span>
-              <a
-                href={`https://ipfs.io/ipfs/${bounty.scopeCid.replace('ipfs://', '')}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-mono text-blue-400 hover:text-blue-300 truncate max-w-xs"
-              >
-                {bounty.scopeCid}
-              </a>
-            </div>
+            {[
+              { key: 'PROTOCOL AGENT', val: `#${bounty.agentId}` },
+              { key: 'TOTAL POOL', val: `${bounty.totalPool} USDC` },
+              { key: 'DEADLINE', val: new Date(bounty.deadline * 1000).toLocaleDateString() },
+              { key: 'SCOPE CID', val: bounty.scopeCid, isLink: true, href: `https://ipfs.io/ipfs/${bounty.scopeCid.replace('ipfs://', '')}` },
+            ].map(({ key, val, isLink, href }) => (
+              <div key={key} className="flex justify-between items-start px-4 py-3 border-b border-dotted border-[#333] last:border-b-0">
+                <span className="text-xs text-[#6b7280] uppercase tracking-tight">{key}</span>
+                {isLink && href ? (
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-[#06b6d4] hover:text-white transition-colors duration-150 truncate max-w-xs"
+                  >
+                    {val}
+                  </a>
+                ) : (
+                  <span className="text-xs text-white font-extrabold">{val}</span>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      <h3 className="text-lg font-semibold mb-4">Submissions</h3>
-
-      {loadingSubs && (
-        <div className="flex items-center gap-2 text-gray-400">
-          <div className="h-4 w-4 rounded-full border-2 border-gray-600 border-t-blue-400 animate-spin" />
-          Loading submissions...
+      {/* Submissions */}
+      <div>
+        <div className="mb-4">
+          <span
+            className="text-sm font-extrabold uppercase text-white"
+            style={{ letterSpacing: '-0.05em' }}
+          >
+            SUBMISSIONS
+          </span>
         </div>
-      )}
 
-      {submissions && submissions.length === 0 && (
-        <p className="text-gray-500 text-sm">No submissions yet.</p>
-      )}
+        {loadingSubs && (
+          <div className="flex items-center gap-2 text-[#6b7280] text-xs">
+            <span className="inline-block w-2 h-2 bg-[#10b981] animate-pulse" style={{ borderRadius: 0 }} />
+            LOADING SUBMISSIONS...
+          </div>
+        )}
 
-      {submissions && submissions.length > 0 && (
-        <div className="space-y-2">
-          {submissions.map((s) => (
-            <Link
-              key={s.id}
-              to={`/submissions/${s.id}`}
-              className="block rounded-lg border border-gray-800 bg-gray-900 p-4 hover:border-gray-600 transition-colors"
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-sm text-gray-400">Bug #{s.id}</span>
-                <span className={`text-xs font-medium ${SEVERITY_COLORS[s.severityClaim] ?? 'text-gray-400'}`}>
-                  {SEVERITY_LABELS[s.severityClaim] ?? 'Unknown'}
-                </span>
-              </div>
-              <div className="flex items-center justify-between mt-1">
-                <span className="text-sm text-gray-400">Hunter Agent #{s.hunterAgentId}</span>
-                <span className="text-xs text-gray-500">{STATE_LABELS[s.state] ?? 'Unknown'}</span>
-              </div>
-              {s.state >= 4 && (
-                <div className="mt-1 text-xs text-green-400">
-                  Payout: {s.payoutAmount} USDC
+        {submissions && submissions.length === 0 && (
+          <p className="text-[#6b7280] text-xs uppercase tracking-tight py-8 text-center">
+            NO SUBMISSIONS YET
+          </p>
+        )}
+
+        {submissions && submissions.length > 0 && (
+          <div className="border border-[#333]" style={{ borderRadius: 0 }}>
+            {submissions.map((s, idx) => (
+              <Link
+                key={s.id}
+                to={`/submissions/${s.id}`}
+                className="flex items-center justify-between px-4 py-3 border-b border-[#333] last:border-b-0 hover:border-l-2 hover:border-l-[#06b6d4] transition-all duration-150 block"
+              >
+                <div className="flex items-center gap-4">
+                  <span className="text-xs text-[#6b7280]">BUG #{s.id}</span>
+                  <span className="text-xs text-[#6b7280]">HUNTER #{s.hunterAgentId}</span>
                 </div>
-              )}
-            </Link>
-          ))}
-        </div>
-      )}
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className="inline-block w-2 h-2"
+                      style={{ borderRadius: 0, backgroundColor: SEVERITY_COLORS[s.severityClaim] ?? '#6b7280' }}
+                    />
+                    <span className="text-xs" style={{ color: SEVERITY_COLORS[s.severityClaim] ?? '#6b7280' }}>
+                      {SEVERITY_LABELS[s.severityClaim] ?? 'UNKNOWN'}
+                    </span>
+                  </div>
+                  <span className="text-xs text-[#6b7280]">{STATE_LABELS[s.state] ?? 'UNKNOWN'}</span>
+                  {s.state >= 4 && (
+                    <span className="text-xs text-[#10b981] font-extrabold">{s.payoutAmount} USDC</span>
+                  )}
+                </div>
+                <span className="text-xs text-[#333]">{idx}</span>
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

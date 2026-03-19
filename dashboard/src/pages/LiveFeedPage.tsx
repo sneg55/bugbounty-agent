@@ -17,28 +17,16 @@ interface FeedEvent {
   timestamp: Date
 }
 
-const EVENT_COLORS: Record<string, string> = {
-  BountyCreated: 'border-purple-700 bg-purple-900/20',
-  BugCommitted: 'border-blue-700 bg-blue-900/20',
-  BugRevealed: 'border-cyan-700 bg-cyan-900/20',
-  StateImpactRegistered: 'border-yellow-700 bg-yellow-900/20',
-  JurySelected: 'border-indigo-700 bg-indigo-900/20',
-  VoteCommitted: 'border-green-700 bg-green-900/20',
-  VoteRevealed: 'border-teal-700 bg-teal-900/20',
-  SubmissionResolved: 'border-emerald-700 bg-emerald-900/20',
-  PatchGuidance: 'border-orange-700 bg-orange-900/20',
-}
-
 const EVENT_TYPE_COLORS: Record<string, string> = {
-  BountyCreated: 'text-purple-400',
-  BugCommitted: 'text-blue-400',
-  BugRevealed: 'text-cyan-400',
-  StateImpactRegistered: 'text-yellow-400',
-  JurySelected: 'text-indigo-400',
-  VoteCommitted: 'text-green-400',
-  VoteRevealed: 'text-teal-400',
-  SubmissionResolved: 'text-emerald-400',
-  PatchGuidance: 'text-orange-400',
+  BountyCreated: '#a855f7',
+  BugCommitted: '#06b6d4',
+  BugRevealed: '#06b6d4',
+  StateImpactRegistered: '#f59e0b',
+  JurySelected: '#a855f7',
+  VoteCommitted: '#10b981',
+  VoteRevealed: '#10b981',
+  SubmissionResolved: '#10b981',
+  PatchGuidance: '#f59e0b',
 }
 
 function formatEvent(eventName: string, args: ethers.Result): string {
@@ -121,7 +109,6 @@ export default function LiveFeedPage() {
       try {
         const provider = getProvider()
         const currentBlock = await provider.getBlockNumber()
-        // First load: query last 50 blocks; subsequent polls: only new blocks
         const fromBlock = lastBlockRef.current
           ? lastBlockRef.current + 1
           : Math.max(0, currentBlock - 50)
@@ -157,81 +144,101 @@ export default function LiveFeedPage() {
   }, [events])
 
   return (
-    <div className="p-6 flex flex-col h-full">
+    <div className="max-w-6xl mx-auto px-6 py-8 flex flex-col" style={{ minHeight: 'calc(100vh - 120px)' }}>
+      {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-bold">Live Event Feed</h2>
-        <div className="flex items-center gap-2 text-sm text-gray-400">
-          {isPolling && (
-            <div className="h-3 w-3 rounded-full border-2 border-gray-600 border-t-blue-400 animate-spin" />
+        <h1
+          className="font-extrabold uppercase text-white"
+          style={{ fontSize: 'clamp(1.5rem, 3vw, 2.5rem)', letterSpacing: '-0.05em' }}
+        >
+          LIVE FEED
+        </h1>
+        <div className="flex items-center gap-2">
+          {isPolling ? (
+            <span className="inline-block w-2 h-2 bg-[#10b981] animate-blink" style={{ borderRadius: 0 }} />
+          ) : (
+            <span className="inline-block w-2 h-2 bg-[#333]" style={{ borderRadius: 0 }} />
           )}
-          <span>{isPolling ? 'Polling...' : 'Idle'}</span>
+          <span className="text-xs text-[#6b7280] uppercase tracking-tight">
+            {isPolling ? 'POLLING' : 'IDLE'}
+          </span>
           {events.length > 0 && (
-            <span className="text-gray-600">({events.length} events)</span>
+            <span className="text-xs text-[#333] uppercase tracking-tight">({events.length})</span>
           )}
         </div>
       </div>
 
       {!enabled && (
-        <div className="rounded-lg border border-yellow-700 bg-yellow-900/20 p-4 text-yellow-300 text-sm mb-4">
-          No contract addresses configured. Update <code>src/contracts.ts</code>.
+        <div className="border border-[#f59e0b] p-4 text-[#f59e0b] text-xs mb-6" style={{ borderRadius: 0 }}>
+          NO CONTRACT ADDRESSES CONFIGURED. UPDATE <code>src/contracts.ts</code>.
         </div>
       )}
 
       {error && (
-        <div className="rounded-lg border border-red-800 bg-red-900/20 p-4 text-red-400 text-sm mb-4">
-          Error fetching events: {error}
+        <div className="border border-[#ef4444] p-4 text-[#ef4444] text-xs mb-6" style={{ borderRadius: 0 }}>
+          ERROR FETCHING EVENTS: {error}
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+      {/* Terminal feed */}
+      <div className="flex-1 overflow-y-auto border border-[#333]" style={{ borderRadius: 0 }}>
+        <div className="border-b border-[#333] px-4 py-2 flex items-center gap-2">
+          <span className="inline-block w-2 h-2 bg-[#10b981]" style={{ borderRadius: 0 }} />
+          <span className="text-xs text-[#6b7280] uppercase tracking-tight">EVENT STREAM</span>
+        </div>
+
         {events.length === 0 && !isPolling && enabled && (
-          <p className="text-gray-500 text-sm">No events found in the last 50 blocks.</p>
+          <p className="text-xs text-[#6b7280] uppercase tracking-tight text-center py-12">
+            NO EVENTS IN LAST 50 BLOCKS
+          </p>
         )}
 
-        {events.map((event) => (
-          <div
-            key={event.id}
-            className={`rounded-lg border p-3 text-sm ${EVENT_COLORS[event.type] ?? 'border-gray-800 bg-gray-900'}`}
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex-1 min-w-0">
-                <span
-                  className={`text-xs font-medium uppercase tracking-wide ${
-                    EVENT_TYPE_COLORS[event.type] ?? 'text-gray-400'
-                  }`}
-                >
-                  {event.type}
-                </span>
-                <p className="text-gray-200 mt-0.5 truncate">{event.description}</p>
-              </div>
-              <div className="text-right text-xs text-gray-500 shrink-0">
-                <p>Block #{event.blockNumber}</p>
-                <a
-                  href={`https://sepolia.basescan.org/tx/${event.txHash}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-500 hover:text-blue-400 font-mono"
-                >
-                  {event.txHash.slice(0, 10)}...
-                </a>
-              </div>
+        {isPolling && events.length === 0 && (
+          <p className="text-xs text-[#6b7280] uppercase tracking-tight text-center py-12">
+            SCANNING CHAIN...
+          </p>
+        )}
+
+        {events.map((event) => {
+          const typeColor = EVENT_TYPE_COLORS[event.type] ?? '#6b7280'
+          return (
+            <div
+              key={event.id}
+              className="flex items-start gap-3 px-4 py-2 border-b border-[#1a1a1a] hover:bg-[#0a0a0a] transition-colors duration-150"
+            >
+              <span className="text-xs text-[#6b7280] shrink-0 w-20 text-right">
+                #{event.blockNumber}
+              </span>
+              <span
+                className="text-xs font-extrabold uppercase tracking-tight shrink-0 w-36"
+                style={{ color: typeColor }}
+              >
+                {event.type}
+              </span>
+              <span className="text-xs text-white flex-1 truncate">{event.description}</span>
+              <a
+                href={`https://sepolia.basescan.org/tx/${event.txHash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-[#06b6d4] hover:text-white transition-colors duration-150 shrink-0"
+              >
+                {event.txHash.slice(0, 8)}...
+              </a>
             </div>
-          </div>
-        ))}
+          )
+        })}
 
         <div ref={bottomRef} />
       </div>
 
       {/* Legend */}
-      <div className="mt-4 pt-4 border-t border-gray-800">
-        <p className="text-xs text-gray-500 mb-2">Event types:</p>
-        <div className="flex flex-wrap gap-2">
-          {Object.entries(EVENT_TYPE_COLORS).map(([type, color]) => (
-            <span key={type} className={`text-xs ${color}`}>
-              {type}
-            </span>
-          ))}
-        </div>
+      <div className="mt-4 pt-4 border-t border-[#333] flex flex-wrap gap-4">
+        {Object.entries(EVENT_TYPE_COLORS).map(([type, color]) => (
+          <div key={type} className="flex items-center gap-1.5">
+            <span className="inline-block w-1.5 h-1.5" style={{ borderRadius: 0, backgroundColor: color }} />
+            <span className="text-xs text-[#6b7280] uppercase tracking-tight">{type}</span>
+          </div>
+        ))}
       </div>
     </div>
   )

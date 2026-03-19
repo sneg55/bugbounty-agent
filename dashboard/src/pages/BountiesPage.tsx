@@ -49,62 +49,81 @@ export default function BountiesPage() {
   })
 
   return (
-    <div className="p-6">
-      <h2 className="text-xl font-bold mb-6">Active Bounties</h2>
+    <div className="max-w-6xl mx-auto px-6 py-8">
+      <h1
+        className="font-extrabold uppercase text-white mb-8"
+        style={{ fontSize: 'clamp(1.5rem, 3vw, 2.5rem)', letterSpacing: '-0.05em' }}
+      >
+        BOUNTIES
+      </h1>
 
       {!enabled && (
-        <div className="rounded-lg border border-yellow-700 bg-yellow-900/20 p-4 text-yellow-300 text-sm mb-4">
-          Contract address not configured. Update <code>src/contracts.ts</code> with deployed addresses.
+        <div className="border border-[#f59e0b] p-4 text-[#f59e0b] text-xs mb-6" style={{ borderRadius: 0 }}>
+          CONTRACT ADDRESS NOT CONFIGURED. UPDATE <code>src/contracts.ts</code> WITH DEPLOYED ADDRESSES.
         </div>
       )}
 
       {isLoading && (
-        <div className="flex items-center gap-2 text-gray-400">
-          <div className="h-4 w-4 rounded-full border-2 border-gray-600 border-t-blue-400 animate-spin" />
-          Loading bounties...
+        <div className="flex items-center gap-2 text-[#6b7280] text-xs">
+          <span className="inline-block w-2 h-2 bg-[#10b981] animate-pulse" style={{ borderRadius: 0 }} />
+          LOADING BOUNTIES...
         </div>
       )}
 
       {error && (
-        <div className="rounded-lg border border-red-800 bg-red-900/20 p-4 text-red-400 text-sm">
-          Failed to load bounties: {String(error)}
+        <div className="border border-[#ef4444] p-4 text-[#ef4444] text-xs mb-6" style={{ borderRadius: 0 }}>
+          FAILED TO LOAD BOUNTIES: {String(error)}
         </div>
       )}
 
       {!isLoading && !error && bounties && bounties.length === 0 && (
-        <p className="text-gray-500">No bounties found.</p>
+        <p className="text-[#6b7280] text-xs text-center py-16 uppercase tracking-tight">
+          NO ACTIVE BOUNTIES
+        </p>
       )}
 
       {bounties && bounties.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto border border-[#333]" style={{ borderRadius: 0 }}>
+          <table className="w-full text-xs">
             <thead>
-              <tr className="border-b border-gray-800 text-gray-400 text-left">
-                <th className="pb-3 pr-4">ID</th>
-                <th className="pb-3 pr-4">Name</th>
-                <th className="pb-3 pr-4">Protocol Agent</th>
-                <th className="pb-3 pr-4">Total Funding</th>
-                <th className="pb-3">Status</th>
+              <tr className="border-b border-[#333]">
+                <th className="text-left px-4 py-3 text-[#6b7280] uppercase tracking-tight font-extrabold">ID</th>
+                <th className="text-left px-4 py-3 text-[#6b7280] uppercase tracking-tight font-extrabold">NAME</th>
+                <th className="text-left px-4 py-3 text-[#6b7280] uppercase tracking-tight font-extrabold">PROTOCOL AGENT</th>
+                <th className="text-right px-4 py-3 text-[#6b7280] uppercase tracking-tight font-extrabold">TOTAL FUNDING</th>
+                <th className="text-left px-4 py-3 text-[#6b7280] uppercase tracking-tight font-extrabold">STATUS</th>
               </tr>
             </thead>
             <tbody>
               {bounties.map((b) => (
-                <tr key={b.id} className="border-b border-gray-800/50 hover:bg-gray-900/50">
-                  <td className="py-3 pr-4 font-mono text-gray-400">#{b.id}</td>
-                  <td className="py-3 pr-4">
+                <tr
+                  key={b.id}
+                  className="border-b border-[#333] hover:border-l-2 hover:border-l-[#06b6d4] transition-all duration-150 group"
+                >
+                  <td className="px-4 py-3 text-[#6b7280]">#{b.id}</td>
+                  <td className="px-4 py-3">
                     <Link
                       to={`/bounties/${b.id}`}
-                      className="text-blue-400 hover:text-blue-300 font-medium"
+                      className="text-[#06b6d4] hover:text-white transition-colors duration-150 font-extrabold"
                     >
                       {b.name}
                     </Link>
                   </td>
-                  <td className="py-3 pr-4 font-mono text-gray-400">Agent #{b.protocolAgentId}</td>
-                  <td className="py-3 pr-4 font-mono">{b.totalFunding} USDC</td>
-                  <td className="py-3">
-                    <span className={b.active ? 'text-green-400' : 'text-gray-400'}>
-                      {b.active ? 'Active' : 'Closed'}
-                    </span>
+                  <td className="px-4 py-3 text-[#6b7280]">AGENT #{b.protocolAgentId}</td>
+                  <td className="px-4 py-3 text-right font-extrabold text-white">{b.totalFunding} USDC</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="inline-block w-2 h-2"
+                        style={{
+                          borderRadius: 0,
+                          backgroundColor: b.active ? '#10b981' : '#6b7280',
+                        }}
+                      />
+                      <span className={b.active ? 'text-[#10b981]' : 'text-[#6b7280]'}>
+                        {b.active ? 'ACTIVE' : 'CLOSED'}
+                      </span>
+                    </div>
                   </td>
                 </tr>
               ))}
