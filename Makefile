@@ -1,4 +1,4 @@
-.PHONY: setup test test-sol test-py test-all clean
+.PHONY: setup test test-sol test-py test-dash test-all clean
 
 PYTHON ?= python3.12
 VENV   := agents/.venv
@@ -26,7 +26,10 @@ test-sol: contracts/out
 test-py: $(VENV)/.installed contracts/out
 	cd agents && ../$(VENV)/bin/python -m pytest -q
 
-test-all: test-sol test-py
+test-dash:
+	cd dashboard && npx vitest run
+
+test-all: test-sol test-py test-dash
 
 # ── Clean ──────────────────────────────────────────────────────────
 clean:
