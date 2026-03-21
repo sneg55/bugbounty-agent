@@ -24,6 +24,7 @@ def scan_bounty(w3, contracts, bounty_id: int, hunter_agent_id: int, executor_pu
     # Fetch in-scope contract sources from IPFS
     scope_data = download_json(scope_uri.replace("ipfs://", ""))
     contract_sources = scope_data.get("contracts", {})
+    contract_addresses = scope_data.get("addresses", {})
 
     for name, source in contract_sources.items():
         print(f"  Analyzing {name}...")
@@ -45,6 +46,7 @@ def scan_bounty(w3, contracts, bounty_id: int, hunter_agent_id: int, executor_pu
             continue
 
         # 3. Generate and submit PoCs for each exploitable finding
+        target_address = contract_addresses.get(name, "0x0000000000000000000000000000000000000000")
         for finding in exploitable:
             severity = SEVERITY_MAP.get(finding.get("severity", "LOW"), 1)
             print(f"  Generating PoC for {finding['finding']} (severity: {finding['severity']})")
@@ -52,7 +54,7 @@ def scan_bounty(w3, contracts, bounty_id: int, hunter_agent_id: int, executor_pu
             poc_source = generate_poc(
                 finding=finding,
                 contract_source=source,
-                contract_address="0x0000000000000000000000000000000000000000",  # Will be filled by executor
+                contract_address=target_address,
             )
 
             report = {

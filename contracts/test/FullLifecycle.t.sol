@@ -92,6 +92,10 @@ contract FullLifecycleTest is Test {
         vm.prank(hunterOwner);
         bugSub.revealBug(bugId, cid, salt);
 
+        // 3b. Protocol disputes (triggers arbitration path)
+        vm.prank(protocolOwner);
+        bugSub.disputeSubmission(bugId);
+
         // 4. Executor registers state impact
         bytes32 reqHash = keccak256("statehash");
         vm.prank(executorAddr);
@@ -136,6 +140,72 @@ contract FullLifecycleTest is Test {
 
         // 10. Verify bounty remaining funds: 50k - 25k paid = 25k
         assertEq(bountyReg.getRemainingFunds(bountyId), 25_000e6);
+    }
+
+    function test_accept_lifecycle() public {
+        // Protocol accepts submission — no arbitration needed
+        vm.prank(protocolOwner);
+        uint256 bountyId = bountyReg.createBounty(
+            1, "AcceptTest", "ipfs://scope",
+            BountyRegistry.Tiers(25_000e6, 10_000e6, 2_000e6, 500e6),
+            50_000e6, block.timestamp + 30 days, 0
+        );
+
+        string memory cid = "ipfs://accept-enc";
+        bytes32 salt = bytes32("acceptsalt");
+        bytes32 commitHash = keccak256(abi.encode(cid, uint256(2), salt));
+        vm.prank(hunterOwner);
+        uint256 bugId = bugSub.commitBug(bountyId, commitHash, 2, 3); // HIGH
+
+        vm.prank(hunterOwner);
+        bugSub.revealBug(bugId, cid, salt);
+
+        // Protocol accepts
+        vm.prank(protocolOwner);
+        bugSub.acceptSubmission(bugId);
+
+        // Hunter gets stake (100e6 for unknown HIGH) + HIGH payout (10,000e6)
+        // Hunter started with 1000, lost 100 stake at commit → 900
+        // After accept: 900 + 100 (stake) + 10000 (payout) = 11000
+        assertEq(usdc.balanceOf(hunterOwner), 11_000e6);
+
+        BugSubmission.Submission memory sub = bugSub.getSubmission(bugId);
+        assertTrue(sub.isValid);
+        assertEq(sub.finalSeverity, 3);
+    }
+
+    function test_timeout_lifecycle() public {
+        // Protocol doesn't respond — auto-accept after 72h
+        vm.prank(protocolOwner);
+        uint256 bountyId = bountyReg.createBounty(
+            1, "TimeoutTest", "ipfs://scope",
+            BountyRegistry.Tiers(25_000e6, 10_000e6, 2_000e6, 500e6),
+            50_000e6, block.timestamp + 30 days, 0
+        );
+
+        string memory cid = "ipfs://timeout-enc";
+        bytes32 salt = bytes32("timeoutsalt");
+        bytes32 commitHash = keccak256(abi.encode(cid, uint256(2), salt));
+        vm.prank(hunterOwner);
+        uint256 bugId = bugSub.commitBug(bountyId, commitHash, 2, 4); // CRITICAL
+
+        vm.prank(hunterOwner);
+        bugSub.revealBug(bugId, cid, salt);
+
+        // 72 hours pass with no protocol response
+        vm.warp(block.timestamp + 72 hours + 1);
+
+        // Anyone triggers auto-accept
+        vm.prank(makeAddr("keeper"));
+        bugSub.autoAcceptOnTimeout(bugId);
+
+        // Hunter gets stake (250e6) + CRITICAL payout (25,000e6)
+        // Started with 1000, lost 250 → 750. After: 750 + 250 + 25000 = 26000
+        assertEq(usdc.balanceOf(hunterOwner), 26_000e6);
+
+        BugSubmission.Submission memory sub = bugSub.getSubmission(bugId);
+        assertTrue(sub.isValid);
+        assertEq(sub.finalSeverity, 4);
     }
 
     function test_security_guards() public {

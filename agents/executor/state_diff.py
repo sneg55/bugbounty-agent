@@ -147,7 +147,10 @@ def compute_impact_flags(balance_changes: list, storage_changes: list) -> dict:
     unauthorized_role_change = False
 
     for bc in balance_changes:
-        delta = float(bc.get("deltaUSD", "0"))
+        try:
+            delta = int(bc.get("deltaWei", "0"))
+        except (ValueError, TypeError):
+            delta = 0
         if delta < 0:
             direct_fund_loss = True
             fund_loss += abs(delta)

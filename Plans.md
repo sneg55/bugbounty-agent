@@ -145,5 +145,61 @@ Created: 2026-03-18 | Source: Post-implementation code review
 
 ---
 
+## Phase 3: Feedback Round — Bug Fixes & 72-Hour Auto-Accept
+
+Created: 2026-03-21 | Source: External review feedback
+
+### P1 — Critical Event-Field Bugs (silent data loss)
+
+| Task | 内容 | DoD | Depends | Status |
+|------|------|-----|---------|--------|
+| 3.1 | Fix event field names in `executor/service.py:108` — `severity`→`finalSeverity`, `valid`→`isValid` | Executor reads correct SubmissionResolved fields; patch guidance triggers on HIGH+ | - | cc:完了 |
+| 3.2 | Fix event field names in `protocol/agent.py:102` — same rename | Protocol watcher logs correct severity/validity | - | cc:完了 |
+| 3.3 | Fix `LiveFeedPage.tsx:49` — treats `bool isValid` as payout amount via `formatUnits()` | Dashboard shows "severity HIGH, valid" not garbled USDC | - | cc:完了 |
+
+### P2 — Correctness & Realism
+
+| Task | 内容 | DoD | Depends | Status |
+|------|------|-----|---------|--------|
+| 3.4 | Fix deltaUSD suppression in `state_diff.py` — use `deltaWei` directly for fund-loss detection instead of always-zero deltaUSD | `compute_impact_flags()` detects fund loss when deltaWei < 0 | - | cc:完了 |
+| 3.5 | Fix PoC zero-address in `hunter/agent.py:55` — inject actual `contract_address` from bounty scope into PoC generation | Generated PoC targets real contract address | - | cc:完了 |
+
+### P3 — Jury Randomization
+
+| Task | 内容 | DoD | Depends | Status |
+|------|------|-----|---------|--------|
+| 3.6 | Replace deterministic top-3 jury selection in `ArbiterContract.sol:140` with score-weighted random via `block.prevrandao` | Jury selection non-deterministic; existing tests pass; new test shows different juries across blocks | - | cc:完了 |
+| 3.7 | Add doc comment above `selectJury()` noting prevrandao is accepted hackathon trade-off (miner-influenceable; commit-reveal would be stronger for production) | Comment present | 3.6 | cc:完了 |
+
+### P4 — 72-Hour Auto-Accept Protocol Flow
+
+The original design promised a dispute window where protocols can accept or dispute submissions. Implementation went straight to mandatory arbitration. This phase adds the accept/dispute window.
+
+**Flow after this phase:**
+```
+reveal → 72h window → protocol accepts (auto-pay) OR disputes (→ arbitration) OR silence (→ auto-accept at claimed severity)
+```
+
+| Task | 内容 | DoD | Depends | Status |
+|------|------|-----|---------|--------|
+| 3.8 | Add dispute window to `BugSubmission.sol`: `revealedAt` timestamp, `DISPUTE_WINDOW = 72 hours`, `ProtocolResponse` enum (None/Accepted/Disputed) in Submission struct | Contract compiles with new fields | - | cc:完了 |
+| 3.9 | Add `acceptSubmission(bugId)` — protocol owner calls within 72h, pays at claimed severity via `BountyRegistry.deductPayout` | Function works; emits `SubmissionAccepted`; test covers happy path + only-protocol-owner + window check | 3.8 | cc:完了 |
+| 3.10 | Add `disputeSubmission(bugId)` — protocol owner calls within 72h, sets Disputed status, enables arbitration path | Function works; emits `SubmissionDisputed`; test covers happy path | 3.8 | cc:完了 |
+| 3.11 | Add `autoAcceptOnTimeout(bugId)` — anyone calls after 72h with no response, pays at claimed severity | Function works; test covers timeout scenario | 3.8 | cc:完了 |
+| 3.12 | Gate `registerStateImpact()` in `ArbiterContract.sol` — require submission is Disputed before allowing state impact | Can't register impact on non-disputed submissions; existing tests updated | 3.10 | cc:完了 |
+| 3.13 | Update `executor/service.py` — handle accept/dispute/timeout paths before arbitration | Executor skips arbitration on accept, proceeds on dispute, auto-accepts on timeout | 3.9, 3.10, 3.11 | cc:完了 |
+| 3.14 | Update `protocol/agent.py` — add accept/dispute decision logic for revealed submissions | Protocol agent responds within window | 3.9, 3.10 | cc:完了 |
+| 3.15 | Update `FullLifecycle.t.sol` — add test for accept path and timeout path alongside existing dispute path | 3 lifecycle variants pass | 3.9, 3.10, 3.11 | cc:完了 |
+
+### P5 — Documentation Alignment
+
+| Task | 内容 | DoD | Depends | Status |
+|------|------|-----|---------|--------|
+| 3.16 | Fix README Protocol Agent description (~line 421) to match accept/dispute/timeout flow | Description matches implementation | 3.14 | cc:完了 |
+| 3.17 | Fix README E2E signatures (~line 851) — `registerStateImpact(uint256,string)` → correct 3-param signature; add accept/dispute cast examples | Cast commands match contract signatures | 3.12 | cc:完了 |
+| 3.18 | README line ~70 — 72-hour claim now accurate post-implementation | Claim matches reality | 3.11 | cc:完了 |
+
+---
+
 ## Archive
 <!-- Completed tasks move here -->

@@ -223,6 +223,10 @@ contract BountyRegistryPendingTest is Test {
     function test_withdraw_succeeds_after_submission_resolved() public {
         vm.warp(bountyDeadline + bountyRegistry.GRACE_PERIOD() + 1);
 
+        // Protocol disputes before arbitration
+        vm.prank(protocolOwner);
+        submission.disputeSubmission(bugId);
+
         // Resolve via arbiter voting
         bytes32 reqHash = keccak256("statehash_wb2");
         vm.prank(executor);

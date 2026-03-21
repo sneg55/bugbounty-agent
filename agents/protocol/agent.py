@@ -68,9 +68,42 @@ def create_bounty(
     return receipt
 
 
+def dispute_revealed_submissions(w3: Web3, contracts: dict, deployments: dict):
+    """Poll for revealed submissions with no protocol response and dispute each one."""
+    private_key = os.getenv("PROTOCOL_AGENT_PRIVATE_KEY")
+    account = w3.eth.account.from_key(private_key)
+    disputed = set()
+
+    print("Protocol Agent watching for revealed submissions to dispute... (Ctrl+C to stop)")
+
+    while True:
+        try:
+            bug_count = contracts["bugSubmission"].functions.getSubmissionCount().call()
+            for i in range(1, bug_count + 1):
+                if i in disputed:
+                    continue
+                sub = contracts["bugSubmission"].functions.getSubmission(i).call()
+                status = sub[6]            # 0=Committed, 1=Revealed, 2=Resolved
+                protocol_response = sub[12]  # 0=None, 1=Accepted, 2=Disputed
+                if status == 1 and protocol_response == 0:
+                    print(f"  Disputing bug #{i}...")
+                    nonce = w3.eth.get_transaction_count(account.address)
+                    tx = contracts["bugSubmission"].functions.disputeSubmission(
+                        i
+                    ).build_transaction({"from": account.address, "nonce": nonce, "gas": 200_000})
+                    signed = account.sign_transaction(tx)
+                    tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+                    w3.eth.wait_for_transaction_receipt(tx_hash)
+                    print(f"  Bug #{i} disputed (tx: {tx_hash.hex()})")
+                    disputed.add(i)
+        except Exception as e:
+            print(f"  [WARN] respond poll error: {e}")
+        time.sleep(5)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Protocol Agent")
-    parser.add_argument("command", choices=["create-bounty", "watch"])
+    parser.add_argument("command", choices=["create-bounty", "watch", "respond"])
     parser.add_argument("--name", default="TestProtocol")
     parser.add_argument("--scope-uri", default="ipfs://demo-scope")
     parser.add_argument("--deadline", type=int, default=86400)
@@ -83,6 +116,8 @@ def main():
     if args.command == "create-bounty":
         agent_id = deployments["agentIds"]["protocol"]
         create_bounty(w3, contracts, agent_id, args.name, args.scope_uri, args.deadline)
+    elif args.command == "respond":
+        dispute_revealed_submissions(w3, contracts, deployments)
     elif args.command == "watch":
         print("Watching for SubmissionResolved and PatchGuidance events... (Ctrl+C to stop)")
         ecies_key = os.getenv("PROTOCOL_ECIES_PRIVATE_KEY")
@@ -99,8 +134,8 @@ def main():
                     )
                     for event in resolved_events:
                         bug_id = event["args"]["bugId"]
-                        valid = event["args"].get("valid", False)
-                        severity = event["args"].get("severity", 0)
+                        valid = event["args"].get("isValid", False)
+                        severity = event["args"].get("finalSeverity", 0)
                         print(f"\nSubmissionResolved: bug #{bug_id} | valid={valid} | severity={severity}")
                 except Exception as e:
                     print(f"  [WARN] SubmissionResolved poll error: {e}")

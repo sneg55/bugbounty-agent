@@ -4,12 +4,12 @@ from executor.state_diff import build_state_impact_json, compute_impact_flags
 
 def test_compute_impact_flags_fund_loss():
     balance_changes = [
-        {"holder": "0xVault", "holderLabel": "Vault", "deltaUSD": "-1000000"},
-        {"holder": "0xAttacker", "holderLabel": "Attacker", "deltaUSD": "+1000000"},
+        {"address": "0xVault", "deltaWei": "-1000000000000000000", "deltaUSD": "0"},
+        {"address": "0xAttacker", "deltaWei": "+1000000000000000000", "deltaUSD": "0"},
     ]
     flags = compute_impact_flags(balance_changes, [])
     assert flags["directFundLoss"] is True
-    assert flags["fundLossUSD"] == 1000000
+    assert flags["fundLossUSD"] == 1000000000000000000
 
 
 def test_compute_impact_flags_role_change():

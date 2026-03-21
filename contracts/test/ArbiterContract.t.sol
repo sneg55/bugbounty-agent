@@ -101,6 +101,10 @@ contract ArbiterContractTest is Test {
         bugId = submission.commitBug(bountyId, commitHash, hunterAgentId, 4);
         vm.prank(hunterOwner);
         submission.revealBug(bugId, cid, salt);
+
+        // Protocol disputes submission (required before arbitration)
+        vm.prank(protocolOwner);
+        submission.disputeSubmission(bugId);
     }
 
     function test_register_state_impact() public {
@@ -114,6 +118,12 @@ contract ArbiterContractTest is Test {
         arbiter.registerStateImpact(bugId, reqHash, "ipfs://statediff");
     }
 
+    /// @dev Helper: return the address that owns the juror at position idx for a given bugId.
+    function _jurorOwner(uint256 _bugId, uint256 idx) internal view returns (address) {
+        ArbiterContract.Arbitration memory arb = arbiter.getArbitration(_bugId);
+        return identity.ownerOf(arb.jurors[idx]);
+    }
+
     function test_full_voting_flow_critical() public {
         // Register state impact
         bytes32 reqHash = keccak256("statehash");
@@ -124,27 +134,29 @@ contract ArbiterContractTest is Test {
         vm.prank(executor);
         arbiter.registerStateImpact(bugId, reqHash, "ipfs://statediff");
 
-        // Arbiter 1 commits: CRITICAL (4)
+        // Look up the actual jurors selected (randomized, any 3 of 4 eligible)
+        address juror0 = _jurorOwner(bugId, 0);
+        address juror1 = _jurorOwner(bugId, 1);
+        address juror2 = _jurorOwner(bugId, 2);
+
         bytes32 salt1 = bytes32("salt1");
-        vm.prank(arbiterOwner1);
-        arbiter.commitVote(bugId, keccak256(abi.encode(uint8(4), salt1)));
-
-        // Arbiter 2 commits: CRITICAL (4)
         bytes32 salt2 = bytes32("salt2");
-        vm.prank(arbiterOwner2);
-        arbiter.commitVote(bugId, keccak256(abi.encode(uint8(4), salt2)));
-
-        // Arbiter 3 commits: HIGH (3)
         bytes32 salt3 = bytes32("salt3");
-        vm.prank(arbiterOwner3);
+
+        // Juror 0 and 1 vote CRITICAL (4), juror 2 votes HIGH (3) → median = CRITICAL
+        vm.prank(juror0);
+        arbiter.commitVote(bugId, keccak256(abi.encode(uint8(4), salt1)));
+        vm.prank(juror1);
+        arbiter.commitVote(bugId, keccak256(abi.encode(uint8(4), salt2)));
+        vm.prank(juror2);
         arbiter.commitVote(bugId, keccak256(abi.encode(uint8(3), salt3)));
 
         // Reveal all
-        vm.prank(arbiterOwner1);
+        vm.prank(juror0);
         arbiter.revealVote(bugId, 4, salt1);
-        vm.prank(arbiterOwner2);
+        vm.prank(juror1);
         arbiter.revealVote(bugId, 4, salt2);
-        vm.prank(arbiterOwner3);
+        vm.prank(juror2);
         arbiter.revealVote(bugId, 3, salt3);
 
         // Check: hunter got paid CRITICAL tier (25,000 USDC) + stake returned
@@ -166,36 +178,41 @@ contract ArbiterContractTest is Test {
         vm.prank(executor);
         arbiter.registerStateImpact(bugId, reqHash, "ipfs://statediff");
 
+        // Look up the actual jurors selected (randomized)
+        address juror0 = _jurorOwner(bugId, 0);
+        address juror1 = _jurorOwner(bugId, 1);
+        address juror2 = _jurorOwner(bugId, 2);
+
         // All vote INVALID (0)
         bytes32 salt1 = bytes32("s1");
         bytes32 salt2 = bytes32("s2");
         bytes32 salt3 = bytes32("s3");
 
-        vm.prank(arbiterOwner1);
+        vm.prank(juror0);
         arbiter.commitVote(bugId, keccak256(abi.encode(uint8(0), salt1)));
-        vm.prank(arbiterOwner2);
+        vm.prank(juror1);
         arbiter.commitVote(bugId, keccak256(abi.encode(uint8(0), salt2)));
-        vm.prank(arbiterOwner3);
+        vm.prank(juror2);
         arbiter.commitVote(bugId, keccak256(abi.encode(uint8(0), salt3)));
 
-        vm.prank(arbiterOwner1);
+        vm.prank(juror0);
         arbiter.revealVote(bugId, 0, salt1);
-        vm.prank(arbiterOwner2);
+        vm.prank(juror1);
         arbiter.revealVote(bugId, 0, salt2);
-        vm.prank(arbiterOwner3);
+        vm.prank(juror2);
         arbiter.revealVote(bugId, 0, salt3);
 
         // Hunter should have lost stake (250 USDC)
         assertEq(usdc.balanceOf(hunterOwner), 750e6); // 1000 - 250 stake
     }
 
-    function test_reputation_ranked_jury_selection() public {
+    function test_weighted_random_jury_selection() public {
         // Authorize this test contract to give reputation feedback directly
         vm.prank(owner);
         reputation.addAuthorizedCaller(address(this));
 
         // Give arbiterAgentId1 and arbiterAgentId2 more "consensus_aligned" feedback
-        // so they rank higher than arbiterAgentId3 and arbiterAgentId4
+        // so they have higher weight in the weighted-random selection
         reputation.giveFeedback(arbiterAgentId1, 10, "consensus_aligned", "HIGH");
         reputation.giveFeedback(arbiterAgentId1, 10, "consensus_aligned", "HIGH");
         reputation.giveFeedback(arbiterAgentId2, 10, "consensus_aligned", "MEDIUM");
@@ -216,15 +233,28 @@ contract ArbiterContractTest is Test {
         vm.prank(executor);
         arbiter.registerStateImpact(bugId, reqHash, "ipfs://statediff2");
 
-        // Verify the jury: top 3 by consensus_aligned score should be selected
+        // Verify the jury: all 3 selected jurors must be drawn from the eligible pool
+        // (arbiters 1–4; hunter and protocol owners are excluded, but none overlap here).
+        // With weighted-random selection, high-score arbiters are more likely but not
+        // guaranteed — so we assert membership in the pool rather than exact IDs.
         ArbiterContract.Arbitration memory arb = arbiter.getArbitration(bugId);
 
-        // Build a set of selected juror IDs
-        bool arbiter1Selected = (arb.jurors[0] == arbiterAgentId1 || arb.jurors[1] == arbiterAgentId1 || arb.jurors[2] == arbiterAgentId1);
-        bool arbiter2Selected = (arb.jurors[0] == arbiterAgentId2 || arb.jurors[1] == arbiterAgentId2 || arb.jurors[2] == arbiterAgentId2);
+        uint256[4] memory eligiblePool = [arbiterAgentId1, arbiterAgentId2, arbiterAgentId3, arbiterAgentId4];
 
-        // arbiter1 (score=2) and arbiter2 (score=1) must be in the jury
-        assertTrue(arbiter1Selected, "Highest-ranked arbiter should be selected");
-        assertTrue(arbiter2Selected, "Second-ranked arbiter should be selected");
+        for (uint256 i = 0; i < 3; i++) {
+            bool found = false;
+            for (uint256 k = 0; k < 4; k++) {
+                if (arb.jurors[i] == eligiblePool[k]) {
+                    found = true;
+                    break;
+                }
+            }
+            assertTrue(found, "Juror must be drawn from the eligible arbiter pool");
+        }
+
+        // All 3 juror slots must be distinct
+        assertTrue(arb.jurors[0] != arb.jurors[1], "Jurors must be distinct");
+        assertTrue(arb.jurors[0] != arb.jurors[2], "Jurors must be distinct");
+        assertTrue(arb.jurors[1] != arb.jurors[2], "Jurors must be distinct");
     }
 }

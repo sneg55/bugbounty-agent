@@ -91,6 +91,10 @@ contract ArbiterContract {
         require(msg.sender == executor, "Only executor");
         require(validationRegistry.getValidationStatus(requestHash), "Not validated");
 
+        // Require protocol has disputed this submission before arbitration can proceed
+        BugSubmission.Submission memory sub = bugSubmission.getSubmission(bugId);
+        require(sub.protocolResponse == BugSubmission.ProtocolResponse.Disputed, "Submission not disputed");
+
         Arbitration storage a = _arbitrations[bugId];
         require(a.phase == Phase.AwaitingStateImpact || a.bugId == 0, "Wrong phase");
 
@@ -107,50 +111,70 @@ contract ArbiterContract {
         emit StateImpactRegistered(bugId, stateImpactCID);
     }
 
-    function _selectJury(uint256 bugId) internal {
-        Arbitration storage a = _arbitrations[bugId];
+    function _collectEligibles(uint256 bugId)
+        internal
+        view
+        returns (uint256[] memory eligibleIds, uint256[] memory eligibleScores, uint256 eligibleCount)
+    {
         BugSubmission.Submission memory sub = bugSubmission.getSubmission(bugId);
-
         address hunterOwner = identityRegistry.ownerOf(sub.hunterAgentId);
-        BountyRegistry bounty = bugSubmission.bountyRegistry();
-        BountyRegistry.Bounty memory b = bounty.getBounty(sub.bountyId);
+        BountyRegistry.Bounty memory b = bugSubmission.bountyRegistry().getBounty(sub.bountyId);
         address protocolOwner = identityRegistry.ownerOf(b.protocolAgentId);
 
-        // Collect eligible arbiters into memory arrays
         uint256 poolLen = arbiterPool.length;
-        uint256[] memory eligibleIds = new uint256[](poolLen);
-        uint256[] memory eligibleScores = new uint256[](poolLen);
-        uint256 eligibleCount = 0;
+        eligibleIds = new uint256[](poolLen);
+        eligibleScores = new uint256[](poolLen);
+        eligibleCount = 0;
 
         for (uint256 i = 0; i < poolLen; i++) {
             uint256 candidateId = arbiterPool[i];
             address candidateOwner = identityRegistry.ownerOf(candidateId);
-
-            // Exclude conflicts
             if (candidateOwner == hunterOwner || candidateOwner == protocolOwner) continue;
-
-            uint256 score = reputationRegistry.getFeedbackCount(candidateId, "consensus_aligned");
             eligibleIds[eligibleCount] = candidateId;
-            eligibleScores[eligibleCount] = score;
+            eligibleScores[eligibleCount] = reputationRegistry.getFeedbackCount(candidateId, "consensus_aligned");
             eligibleCount++;
         }
+    }
+
+    /// @notice Selects 3 jurors from the eligible pool using score-weighted random sampling.
+    /// @dev Uses `block.prevrandao` for randomness. Each arbiter's selection weight equals
+    ///      their `consensus_aligned` feedback count plus 1, so zero-score arbiters still
+    ///      have a chance. A fresh random seed is derived per pick via
+    ///      `keccak256(abi.encodePacked(block.prevrandao, bugId, pick))`.
+    ///
+    ///      Security trade-off (hackathon): `block.prevrandao` is influenceable by the
+    ///      block proposer (validator) and is therefore not suitable for production use.
+    ///      A production deployment should replace this with commit-reveal randomness or
+    ///      a verifiable randomness oracle such as Chainlink VRF.
+    function _selectJury(uint256 bugId) internal {
+        (uint256[] memory eligibleIds, uint256[] memory eligibleScores, uint256 eligibleCount) =
+            _collectEligibles(bugId);
 
         require(eligibleCount >= 3, "Not enough eligible arbiters");
 
-        // Select top 3 by score (3 passes: find max, mark selected, repeat)
+        uint256 totalWeight = 0;
+        for (uint256 j = 0; j < eligibleCount; j++) {
+            totalWeight += eligibleScores[j] + 1;
+        }
+
+        Arbitration storage a = _arbitrations[bugId];
         bool[] memory picked = new bool[](eligibleCount);
+        uint256 remainingWeight = totalWeight;
         for (uint256 pick = 0; pick < 3; pick++) {
-            uint256 bestIdx = type(uint256).max;
-            uint256 bestScore = 0;
+            uint256 target = uint256(keccak256(abi.encodePacked(block.prevrandao, bugId, pick))) % remainingWeight;
+            uint256 cumulative = 0;
+            uint256 selectedIdx = 0;
             for (uint256 j = 0; j < eligibleCount; j++) {
                 if (picked[j]) continue;
-                if (bestIdx == type(uint256).max || eligibleScores[j] > bestScore) {
-                    bestIdx = j;
-                    bestScore = eligibleScores[j];
+                cumulative += eligibleScores[j] + 1;
+                if (cumulative > target) {
+                    selectedIdx = j;
+                    break;
                 }
             }
-            picked[bestIdx] = true;
-            a.jurors[pick] = eligibleIds[bestIdx];
+            picked[selectedIdx] = true;
+            remainingWeight -= eligibleScores[selectedIdx] + 1;
+            a.jurors[pick] = eligibleIds[selectedIdx];
         }
 
         emit JurySelected(bugId, a.jurors);

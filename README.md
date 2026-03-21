@@ -417,8 +417,9 @@ agents/
 
 #### Protocol Agent
 - Creates bounties with scope definitions
-- Reviews submitted bugs
-- Accepts valid submissions OR disputes by uploading state impact
+- Reviews submitted bugs within the 72-hour response window
+- Accepts valid submissions (auto-pays at claimed severity) OR disputes to trigger AI arbitration
+- If the protocol stays silent for 72 hours, anyone can trigger auto-accept at the hunter's claimed severity
 - Withdraws remaining funds after deadline
 
 #### Hunter Agent
@@ -861,12 +862,20 @@ cast send $BUG_SUBMISSION \
   --private-key $HUNTER_KEY \
   --rpc-url $RPC
 
-# 3. Protocol disputes (registers state impact)
+# 3. Protocol disputes the submission (within 72-hour window)
 echo "=== Step 3: Protocol disputes ==="
-cast send $ARBITER_CONTRACT \
-  "registerStateImpact(uint256,string)" \
-  1 "ipfs://QmStateImpact" \
+cast send $BUG_SUBMISSION \
+  "disputeSubmission(uint256)" \
+  1 \
   --private-key $PROTOCOL_KEY \
+  --rpc-url $RPC
+
+# 3b. Executor registers state impact (only after dispute)
+echo "=== Step 3b: Executor registers state impact ==="
+cast send $ARBITER_CONTRACT \
+  "registerStateImpact(uint256,bytes32,string)" \
+  1 $REQUEST_HASH "ipfs://QmStateImpact" \
+  --private-key $EXECUTOR_KEY \
   --rpc-url $RPC
 
 # 4. Arbiters vote

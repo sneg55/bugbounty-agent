@@ -45,8 +45,12 @@ function formatEvent(eventName: string, args: ethers.Result): string {
       return `Juror #${args[1]} committed vote for Bug #${args[0]}`
     case 'VoteRevealed':
       return `Juror #${args[1]} revealed vote for Bug #${args[0]}: severity ${args[2]}`
-    case 'SubmissionResolved':
-      return `Bug #${args[0]} resolved — verdict ${args[1]}, payout ${ethers.formatUnits(args[2], 6)} USDC`
+    case 'SubmissionResolved': {
+      const severityLabels = ['INVALID', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
+      const severity = Number(args[1]);
+      const isValid = args[2];
+      return `Bug #${args[0]} resolved — ${severityLabels[severity] || 'UNKNOWN'} severity, ${isValid ? 'valid' : 'invalid'}`;
+    }
     case 'PatchGuidance':
       return `Patch guidance issued for Bug #${args[0]}`
     default:

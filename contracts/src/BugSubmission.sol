@@ -11,6 +11,7 @@ contract BugSubmission {
     using SafeERC20 for IERC20;
 
     enum Status { Committed, Revealed, Resolved }
+    enum ProtocolResponse { None, Accepted, Disputed }
 
     struct Submission {
         uint256 bountyId;
@@ -24,9 +25,12 @@ contract BugSubmission {
         bool isValid;
         uint256 commitBlock;
         address hunterWallet;
+        uint256 revealedAt;
+        ProtocolResponse protocolResponse;
     }
 
     uint256 public constant REVEAL_WINDOW = 200; // blocks
+    uint256 public constant DISPUTE_WINDOW = 72 hours;
     uint256 public constant MAX_SUBMISSIONS_PER_HUNTER = 3;
 
     IERC20 public immutable usdc;
@@ -43,6 +47,8 @@ contract BugSubmission {
     event BugCommitted(uint256 indexed bugId, uint256 indexed bountyId, uint256 indexed hunterAgentId, uint8 claimedSeverity);
     event BugRevealed(uint256 indexed bugId, string encryptedCID);
     event SubmissionResolved(uint256 indexed bugId, uint8 finalSeverity, bool isValid);
+    event SubmissionAccepted(uint256 indexed bugId, uint8 claimedSeverity);
+    event SubmissionDisputed(uint256 indexed bugId);
 
     address public immutable deployer;
 
@@ -101,7 +107,9 @@ contract BugSubmission {
             finalSeverity: 0,
             isValid: false,
             commitBlock: block.number,
-            hunterWallet: msg.sender
+            hunterWallet: msg.sender,
+            revealedAt: 0,
+            protocolResponse: ProtocolResponse.None
         });
 
         _activeSubmissionCount[bountyId][hunterAgentId]++;
@@ -124,6 +132,7 @@ contract BugSubmission {
 
         sub.encryptedCID = encryptedCID;
         sub.status = Status.Revealed;
+        sub.revealedAt = block.timestamp;
 
         emit BugRevealed(bugId, encryptedCID);
     }
@@ -168,6 +177,70 @@ contract BugSubmission {
         usdc.safeTransfer(sub.hunterWallet, sub.stake);
 
         emit SubmissionResolved(bugId, 0, false);
+    }
+
+    function acceptSubmission(uint256 bugId) external {
+        Submission storage sub = _submissions[bugId];
+        require(sub.status == Status.Revealed, "Not revealed");
+        require(sub.protocolResponse == ProtocolResponse.None, "Already responded");
+        require(block.timestamp <= sub.revealedAt + DISPUTE_WINDOW, "Dispute window expired");
+
+        // Only the protocol owner for this bounty can accept
+        BountyRegistry.Bounty memory bounty = bountyRegistry.getBounty(sub.bountyId);
+        require(identityRegistry.ownerOf(bounty.protocolAgentId) == msg.sender, "Not protocol owner");
+
+        sub.protocolResponse = ProtocolResponse.Accepted;
+        sub.status = Status.Resolved;
+        sub.finalSeverity = sub.claimedSeverity;
+        sub.isValid = true;
+
+        _activeSubmissionCount[sub.bountyId][sub.hunterAgentId]--;
+        _pendingCountPerBounty[sub.bountyId]--;
+
+        // Return stake + pay at claimed severity
+        usdc.safeTransfer(sub.hunterWallet, sub.stake);
+        uint256 payout = bountyRegistry.getTierPayout(sub.bountyId, sub.claimedSeverity);
+        bountyRegistry.deductPayout(sub.bountyId, payout, sub.hunterWallet);
+
+        emit SubmissionAccepted(bugId, sub.claimedSeverity);
+        emit SubmissionResolved(bugId, sub.claimedSeverity, true);
+    }
+
+    function disputeSubmission(uint256 bugId) external {
+        Submission storage sub = _submissions[bugId];
+        require(sub.status == Status.Revealed, "Not revealed");
+        require(sub.protocolResponse == ProtocolResponse.None, "Already responded");
+        require(block.timestamp <= sub.revealedAt + DISPUTE_WINDOW, "Dispute window expired");
+
+        BountyRegistry.Bounty memory bounty = bountyRegistry.getBounty(sub.bountyId);
+        require(identityRegistry.ownerOf(bounty.protocolAgentId) == msg.sender, "Not protocol owner");
+
+        sub.protocolResponse = ProtocolResponse.Disputed;
+
+        emit SubmissionDisputed(bugId);
+    }
+
+    function autoAcceptOnTimeout(uint256 bugId) external {
+        Submission storage sub = _submissions[bugId];
+        require(sub.status == Status.Revealed, "Not revealed");
+        require(sub.protocolResponse == ProtocolResponse.None, "Already responded");
+        require(block.timestamp > sub.revealedAt + DISPUTE_WINDOW, "Dispute window not expired");
+
+        sub.protocolResponse = ProtocolResponse.Accepted;
+        sub.status = Status.Resolved;
+        sub.finalSeverity = sub.claimedSeverity;
+        sub.isValid = true;
+
+        _activeSubmissionCount[sub.bountyId][sub.hunterAgentId]--;
+        _pendingCountPerBounty[sub.bountyId]--;
+
+        // Return stake + pay at claimed severity
+        usdc.safeTransfer(sub.hunterWallet, sub.stake);
+        uint256 payout = bountyRegistry.getTierPayout(sub.bountyId, sub.claimedSeverity);
+        bountyRegistry.deductPayout(sub.bountyId, payout, sub.hunterWallet);
+
+        emit SubmissionAccepted(bugId, sub.claimedSeverity);
+        emit SubmissionResolved(bugId, sub.claimedSeverity, true);
     }
 
     function reclaimExpiredCommit(uint256 bugId) external {
