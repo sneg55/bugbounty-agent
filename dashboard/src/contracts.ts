@@ -1,15 +1,15 @@
-// Contract addresses (populated at runtime from deployments.json)
+// Contract addresses on Base Sepolia (deployed 2026-03-20)
 export const CONTRACT_ADDRESSES = {
-  bountyRegistry: '' as string,
-  bugSubmission: '' as string,
-  arbiterContract: '' as string,
-  identityRegistry: '' as string,
-  reputationRegistry: '' as string,
+  bountyRegistry: '0xb8926B097FB26883b550aDdC191b4F75F24Ea4Aa',
+  bugSubmission: '0x919c1Da141Cb1456Aa150292c562f7A969234C20',
+  arbiterContract: '0x28e83212a1D98c2172c716B58aFF54029f34b413',
+  identityRegistry: '0x5d438B26aa2FeE1874499ff4705aF72bc6107D44',
+  reputationRegistry: '0x2606f45324cA04Aa3C2153cD2d5E00abd719E6ae',
+  validationRegistry: '0x31eCCF46166AFD87c917Cc45A864551B5298F98a',
+  mockUSDC: '0x003e27d8A04f7bC450D8ac03b72c7318f6204b1C',
 }
 
 // BountyRegistry ABI (relevant fragments)
-// Struct: Bounty { protocolAgentId, name, scopeURI, tiers: { critical, high, medium, low },
-//                  totalFunding, totalPaid, deadline, minHunterReputation, active, submissionCount }
 export const BOUNTY_REGISTRY_ABI = [
   'event BountyCreated(uint256 indexed bountyId, uint256 indexed protocolAgentId, string name, uint256 totalFunding, uint256 deadline)',
   'event PayoutDeducted(uint256 indexed bountyId, address indexed recipient, uint256 amount)',
@@ -21,9 +21,6 @@ export const BOUNTY_REGISTRY_ABI = [
 ]
 
 // BugSubmission ABI (relevant fragments)
-// Enum: Status { Committed, Revealed, Resolved }
-// Struct: Submission { bountyId, hunterAgentId, claimedSeverity, commitHash, encryptedCID,
-//                      stake, status, finalSeverity, isValid, commitBlock, hunterWallet }
 export const BUG_SUBMISSION_ABI = [
   'event BugCommitted(uint256 indexed bugId, uint256 indexed bountyId, uint256 indexed hunterAgentId, uint8 claimedSeverity)',
   'event BugRevealed(uint256 indexed bugId, string encryptedCID)',
@@ -33,10 +30,6 @@ export const BUG_SUBMISSION_ABI = [
 ]
 
 // ArbiterContract ABI (relevant fragments)
-// Enum: Phase { AwaitingStateImpact, Voting, Revealing, Resolved }
-// Struct: Arbitration { bugId, stateImpactCID, validationRequestHash, jurors[3],
-//                       commitHashes[3], revealedSeverities[3], revealed[3],
-//                       revealCount, commitDeadlineBlock, revealDeadlineBlock, phase }
 export const ARBITER_CONTRACT_ABI = [
   'event ArbiterRegistered(uint256 indexed arbiterAgentId)',
   'event ArbiterUnregistered(uint256 indexed arbiterAgentId)',
