@@ -1027,7 +1027,7 @@ decrypted = decrypt(protocol_private_key, encrypted)
 | ERC-8004 identity | ✅ IdentityRegistry — all agents have on-chain identity |
 | On-chain verifiability | ✅ Every submission, vote, payout recorded on-chain |
 | Autonomous execution | ✅ Agents operate without human intervention |
-| DevSpot compatibility | ⬜ agent.json manifests and agent_log.json traces planned but not yet implemented |
+| Agent discoverability | ✅ On-chain identity via IdentityRegistry (tokenURI, metadata, reputation) — no static manifest needed |
 | Safety guardrails | ✅ Arbiters only see State Impact JSON |
 
 ### Venice: Private Agents, Trusted Actions ($11,500)
