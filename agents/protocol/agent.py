@@ -131,13 +131,18 @@ def respond_to_submissions(w3: Web3, contracts: dict, deployments: dict):
                     # 3. Execute decision
                     nonce = w3.eth.get_transaction_count(account.address)
                     if result["action"] == "ACCEPT":
+                        # Accept at the lower of claimed vs estimated severity to prevent overpay
+                        from protocol.triage import SEVERITY_MAP
+                        estimated_num = SEVERITY_MAP.get(result["estimated_severity"], 0)
+                        accept_severity = min(claimed_severity, estimated_num) if estimated_num > 0 else claimed_severity
+                        accept_label = SEVERITY_LABELS[accept_severity] if 0 <= accept_severity < len(SEVERITY_LABELS) else "?"
                         tx = contracts["bugSubmission"].functions.acceptSubmission(
-                            bug_id
+                            bug_id, accept_severity
                         ).build_transaction({"from": account.address, "nonce": nonce, "gas": 300_000})
                         signed = account.sign_transaction(tx)
                         tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
                         w3.eth.wait_for_transaction_receipt(tx_hash)
-                        print(f"    → ACCEPTED bug #{bug_id} (tx: {tx_hash.hex()})")
+                        print(f"    → ACCEPTED bug #{bug_id} at {accept_label} (tx: {tx_hash.hex()})")
                     else:
                         _send_dispute(w3, contracts, account, bug_id)
                         print(f"    → DISPUTED bug #{bug_id}")

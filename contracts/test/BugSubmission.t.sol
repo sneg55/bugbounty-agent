@@ -166,7 +166,7 @@ contract BugSubmissionTest is Test {
         uint256 hunterBefore = usdc.balanceOf(hunterOwner);
 
         vm.prank(protocolOwner);
-        submission.acceptSubmission(id);
+        submission.acceptSubmission(id, 3);
 
         BugSubmission.Submission memory sub = submission.getSubmission(id);
         assertTrue(sub.isValid);
@@ -219,14 +219,14 @@ contract BugSubmissionTest is Test {
 
         vm.prank(protocolOwner);
         vm.expectRevert("Already responded");
-        submission.acceptSubmission(id);
+        submission.acceptSubmission(id, 3);
     }
 
     function test_cannot_dispute_after_accept() public {
         uint256 id = _commitAndReveal(3);
 
         vm.prank(protocolOwner);
-        submission.acceptSubmission(id);
+        submission.acceptSubmission(id, 3);
 
         vm.prank(protocolOwner);
         vm.expectRevert(); // Resolved or Already responded
@@ -240,7 +240,7 @@ contract BugSubmissionTest is Test {
 
         vm.prank(protocolOwner);
         vm.expectRevert("Dispute window expired");
-        submission.acceptSubmission(id);
+        submission.acceptSubmission(id, 3);
     }
 
     function test_non_protocol_owner_cannot_accept() public {
@@ -248,7 +248,7 @@ contract BugSubmissionTest is Test {
 
         vm.prank(hunterOwner);
         vm.expectRevert("Not protocol owner");
-        submission.acceptSubmission(id);
+        submission.acceptSubmission(id, 3);
     }
 
     function test_auto_accept_reverts_before_window() public {
@@ -257,5 +257,29 @@ contract BugSubmissionTest is Test {
         vm.prank(makeAddr("anyone"));
         vm.expectRevert("Dispute window not expired");
         submission.autoAcceptOnTimeout(id);
+    }
+
+    function test_accept_at_lower_severity() public {
+        uint256 id = _commitAndReveal(4); // CRITICAL claimed
+        uint256 hunterBefore = usdc.balanceOf(hunterOwner);
+
+        // Protocol accepts at HIGH (3) instead of CRITICAL (4)
+        vm.prank(protocolOwner);
+        submission.acceptSubmission(id, 3);
+
+        BugSubmission.Submission memory sub = submission.getSubmission(id);
+        assertEq(sub.finalSeverity, 3); // HIGH, not CRITICAL
+        assertTrue(sub.isValid);
+
+        // Hunter gets stake (250e6 for CRITICAL) + HIGH payout (10,000e6), NOT CRITICAL (25,000e6)
+        assertEq(usdc.balanceOf(hunterOwner), hunterBefore + 250e6 + 10_000e6);
+    }
+
+    function test_cannot_accept_above_claimed_severity() public {
+        uint256 id = _commitAndReveal(2); // MEDIUM claimed
+
+        vm.prank(protocolOwner);
+        vm.expectRevert("Severity must be 1..claimedSeverity");
+        submission.acceptSubmission(id, 3); // tries to accept at HIGH > MEDIUM
     }
 }

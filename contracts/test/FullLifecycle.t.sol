@@ -162,7 +162,7 @@ contract FullLifecycleTest is Test {
 
         // Protocol accepts
         vm.prank(protocolOwner);
-        bugSub.acceptSubmission(bugId);
+        bugSub.acceptSubmission(bugId, 3); // accept at claimed HIGH severity
 
         // Hunter gets stake (100e6 for unknown HIGH) + HIGH payout (10,000e6)
         // Hunter started with 1000, lost 100 stake at commit → 900

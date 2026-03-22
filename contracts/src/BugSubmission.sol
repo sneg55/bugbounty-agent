@@ -179,11 +179,12 @@ contract BugSubmission {
         emit SubmissionResolved(bugId, 0, false);
     }
 
-    function acceptSubmission(uint256 bugId) external {
+    function acceptSubmission(uint256 bugId, uint8 severity) external {
         Submission storage sub = _submissions[bugId];
         require(sub.status == Status.Revealed, "Not revealed");
         require(sub.protocolResponse == ProtocolResponse.None, "Already responded");
         require(block.timestamp <= sub.revealedAt + DISPUTE_WINDOW, "Dispute window expired");
+        require(severity >= 1 && severity <= sub.claimedSeverity, "Severity must be 1..claimedSeverity");
 
         // Only the protocol owner for this bounty can accept
         BountyRegistry.Bounty memory bounty = bountyRegistry.getBounty(sub.bountyId);
@@ -191,18 +192,18 @@ contract BugSubmission {
 
         sub.protocolResponse = ProtocolResponse.Accepted;
         sub.status = Status.Resolved;
-        sub.finalSeverity = sub.claimedSeverity;
+        sub.finalSeverity = severity;
         sub.isValid = true;
 
         _activeSubmissionCount[sub.bountyId][sub.hunterAgentId]--;
         _pendingCountPerBounty[sub.bountyId]--;
 
-        // Return stake + pay at claimed severity
+        // Return stake + pay at accepted severity
         usdc.safeTransfer(sub.hunterWallet, sub.stake);
-        uint256 payout = bountyRegistry.getTierPayout(sub.bountyId, sub.claimedSeverity);
+        uint256 payout = bountyRegistry.getTierPayout(sub.bountyId, severity);
         bountyRegistry.deductPayout(sub.bountyId, payout, sub.hunterWallet);
 
-        emit SubmissionAccepted(bugId, sub.claimedSeverity);
+        emit SubmissionAccepted(bugId, severity);
         emit SubmissionResolved(bugId, sub.claimedSeverity, true);
     }
 
