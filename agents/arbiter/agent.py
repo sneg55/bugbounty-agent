@@ -36,30 +36,31 @@ def run_arbiter(slot: int):
         latest = w3.eth.block_number
         last = cursor.get_last_block()
         if latest > last:
-            # Poll for arbitration assignments only when new blocks exist
-            bug_count = contracts["bugSubmission"].functions.getSubmissionCount().call()
-            for bug_id in range(1, bug_count + 1):
+            # Poll JurySelected events — O(events) instead of O(2N)
+            try:
+                jury_events = contracts["arbiterContract"].events.JurySelected.get_logs(
+                    fromBlock=last + 1, toBlock=latest
+                )
+            except Exception as e:
+                print(f"  Error fetching JurySelected events: {e}")
+                jury_events = []
+
+            for event in jury_events:
+                bug_id = event["args"]["bugId"]
+                jurors = event["args"]["jurors"]  # uint256[3]
+
                 if bug_id in processed:
                     continue
+                if arbiter_agent_id not in jurors:
+                    continue
+
+                # This arbiter is on the jury — process it
+                processed.add(bug_id)
+                print(f"  Selected as juror for bug #{bug_id}")
 
                 try:
+                    # Fetch arbitration only for bugs where this arbiter is on the jury
                     arb = contracts["arbiterContract"].functions.getArbitration(bug_id).call()
-                    phase = arb[11]  # phase
-                    jurors = arb[3]  # jurors array
-
-                    # Check if this arbiter is on the jury and voting is open
-                    if arbiter_agent_id not in jurors:
-                        continue
-                    if phase < 1:  # Not yet in voting phase
-                        continue
-                    if phase >= 3:  # Already resolved
-                        processed.add(bug_id)
-                        continue
-
-                    processed.add(bug_id)
-                    print(f"  Selected as juror for bug #{bug_id}")
-
-                    # Fetch state impact from IPFS
                     state_impact_cid = arb[1]  # stateImpactCID
                     state_impact = download_json(state_impact_cid)
 

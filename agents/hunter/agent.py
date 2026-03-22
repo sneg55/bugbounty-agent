@@ -109,11 +109,14 @@ def main():
             latest = w3.eth.block_number
             last = cursor.get_last_block()
             if latest > last:
-                count = contracts["bountyRegistry"].functions.getBountyCount().call()
-                for i in range(1, count + 1):
-                    if i not in seen_bounties:
-                        seen_bounties.add(i)
-                        scan_bounty(w3, contracts, i, hunter_agent_id, executor_pubkey, protocol_pubkey)
+                bounty_events = contracts["bountyRegistry"].events.BountyCreated.get_logs(
+                    fromBlock=last + 1, toBlock=latest
+                )
+                for event in bounty_events:
+                    bounty_id = event["args"]["bountyId"]
+                    if bounty_id not in seen_bounties:
+                        seen_bounties.add(bounty_id)
+                        scan_bounty(w3, contracts, int(bounty_id), hunter_agent_id, executor_pubkey, protocol_pubkey)
                 cursor.set_last_block(latest)
             time.sleep(10)
 

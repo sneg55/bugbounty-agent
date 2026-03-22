@@ -194,29 +194,12 @@ def _poll_submission_resolved(w3: Web3, contracts: dict, bug_id: int, poll_inter
     return None
 
 
-DISPUTE_WINDOW_SECONDS = 72 * 60 * 60  # 72 hours
-
-
-def _auto_accept_on_timeout(w3: Web3, contracts: dict, bug_id: int):
-    """Call autoAcceptOnTimeout on BugSubmission for a bug whose dispute window has expired."""
-    private_key = os.getenv("EXECUTOR_PRIVATE_KEY")
-    account = w3.eth.account.from_key(private_key)
-    nonce = w3.eth.get_transaction_count(account.address)
-    tx = contracts["bugSubmission"].functions.autoAcceptOnTimeout(
-        bug_id
-    ).build_transaction({"from": account.address, "nonce": nonce, "gas": 200_000})
-    signed = account.sign_transaction(tx)
-    tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
-    w3.eth.wait_for_transaction_receipt(tx_hash)
-    print(f"  autoAcceptOnTimeout called for bug #{bug_id} (tx: {tx_hash.hex()})")
-
-
 def main():
     w3 = get_web3()
     contracts = get_all_contracts(w3)
     deployments = load_deployments()
 
-    print("Executor watching for BugRevealed events... (Ctrl+C to stop)")
+    print("Executor watching for SubmissionDisputed events... (Ctrl+C to stop)")
     cursor = BlockCursor("executor")
     processed = set()
 
@@ -224,42 +207,28 @@ def main():
         latest = w3.eth.block_number
         last = cursor.get_last_block()
         if latest > last:
-            # Poll for revealed submissions only when new blocks exist
-            bug_count = contracts["bugSubmission"].functions.getSubmissionCount().call()
-            for i in range(1, bug_count + 1):
-                if i in processed:
-                    continue
-                sub = contracts["bugSubmission"].functions.getSubmission(i).call()
-                status = sub[6]            # 0=Committed, 1=Revealed, 2=Resolved
-                if status != 1:            # only care about Revealed
-                    continue
-                protocol_response = sub[12]  # 0=None, 1=Accepted, 2=Disputed
-                revealed_at = sub[11]        # timestamp
-
-                if protocol_response == 1:
-                    # Protocol already accepted — no arbitration needed
-                    print(f"  Bug #{i}: already accepted by protocol, skipping.")
-                    processed.add(i)
-                elif protocol_response == 2:
-                    # Disputed — proceed with full arbitration pipeline
-                    processed.add(i)
+            # 1. Check for newly disputed submissions
+            disputed_events = contracts["bugSubmission"].events.SubmissionDisputed.get_logs(
+                fromBlock=last + 1, toBlock=latest
+            )
+            for event in disputed_events:
+                bug_id = event["args"]["bugId"]
+                if bug_id not in processed:
+                    processed.add(bug_id)
                     try:
-                        process_revealed_bug(w3, contracts, i, deployments)
+                        process_revealed_bug(w3, contracts, bug_id, deployments)
                     except Exception as e:
-                        print(f"  Error processing bug #{i}: {e}")
-                elif protocol_response == 0:
-                    # Protocol has not responded yet
-                    now = int(time.time())
-                    window_expired = (revealed_at > 0) and (now >= revealed_at + DISPUTE_WINDOW_SECONDS)
-                    if window_expired:
-                        # 72-hour window elapsed with no response — trigger auto-accept
-                        print(f"  Bug #{i}: dispute window expired, calling autoAcceptOnTimeout.")
-                        processed.add(i)
-                        try:
-                            _auto_accept_on_timeout(w3, contracts, i)
-                        except Exception as e:
-                            print(f"  Error calling autoAcceptOnTimeout for bug #{i}: {e}")
-                    # else: still within window, keep polling next cycle
+                        print(f"  Error processing bug #{bug_id}: {e}")
+
+            # 2. Check for accepted submissions (just log, no processing needed)
+            accepted_events = contracts["bugSubmission"].events.SubmissionAccepted.get_logs(
+                fromBlock=last + 1, toBlock=latest
+            )
+            for event in accepted_events:
+                bug_id = event["args"]["bugId"]
+                processed.add(bug_id)
+                print(f"  Bug #{bug_id} accepted by protocol — skipping executor pipeline")
+
             cursor.set_last_block(latest)
         time.sleep(5)
 

@@ -6,6 +6,7 @@ import time
 
 from web3 import Web3
 
+from common.block_cursor import BlockCursor
 from common.config import RPC_URL, load_deployments
 from common.contracts import get_web3, get_all_contracts
 from common.crypto import decrypt
@@ -78,59 +79,72 @@ def respond_to_submissions(w3: Web3, contracts: dict, deployments: dict):
 
     print("Protocol Agent responding to submissions (evidence-based triage)... (Ctrl+C to stop)")
 
+    cursor = BlockCursor("protocol_respond")
+
     while True:
         try:
-            bug_count = contracts["bugSubmission"].functions.getSubmissionCount().call()
-            for i in range(1, bug_count + 1):
-                if i in processed:
-                    continue
-                sub = contracts["bugSubmission"].functions.getSubmission(i).call()
-                status = sub[6]              # 0=Committed, 1=Revealed, 2=Resolved
-                protocol_response = sub[12]  # 0=None, 1=Accepted, 2=Disputed
-                if status != 1 or protocol_response != 0:
-                    continue
+            latest = w3.eth.block_number
+            last = cursor.get_last_block()
 
-                claimed_severity = sub[2]  # claimedSeverity
-                encrypted_cid = sub[4]     # encryptedCID
-                bounty_id = sub[0]         # bountyId
-
-                # 1. Download and decrypt the bug report
-                report, scope_source = _decrypt_and_fetch_scope(
-                    contracts, deployments, ecies_key, encrypted_cid, bounty_id
+            if latest > last:
+                revealed_events = contracts["bugSubmission"].events.BugRevealed.get_logs(
+                    fromBlock=last + 1, toBlock=latest
                 )
+                for event in revealed_events:
+                    bug_id = event["args"]["bugId"]
+                    if bug_id in processed:
+                        continue
 
-                if report is None:
-                    # Can't read report — dispute as safe fallback
-                    print(f"  Bug #{i}: cannot decrypt report — DISPUTE (fallback)")
-                    _send_dispute(w3, contracts, account, i)
-                    processed.add(i)
-                    continue
+                    sub = contracts["bugSubmission"].functions.getSubmission(bug_id).call()
+                    status = sub[6]              # 0=Committed, 1=Revealed, 2=Resolved
+                    protocol_response = sub[12]  # 0=None, 1=Accepted, 2=Disputed
+                    if status != 1 or protocol_response != 0:
+                        processed.add(bug_id)
+                        continue
 
-                # 2. Triage via AI inference
-                result = triage_submission(report, scope_source, claimed_severity)
+                    claimed_severity = sub[2]  # claimedSeverity
+                    encrypted_cid = sub[4]     # encryptedCID
+                    bounty_id = sub[0]         # bountyId
 
-                claimed_label = SEVERITY_LABELS[claimed_severity] if 0 <= claimed_severity < len(SEVERITY_LABELS) else "?"
-                print(f"  Bug #{i}: claimed={claimed_label} | "
-                      f"estimated={result['estimated_severity']} | "
-                      f"valid={result['valid']} | confidence={result['confidence']:.2f} | "
-                      f"action={result['action']}")
-                print(f"    Reasoning: {result['reasoning']}")
+                    # 1. Download and decrypt the bug report
+                    report, scope_source = _decrypt_and_fetch_scope(
+                        contracts, deployments, ecies_key, encrypted_cid, bounty_id
+                    )
 
-                # 3. Execute decision
-                nonce = w3.eth.get_transaction_count(account.address)
-                if result["action"] == "ACCEPT":
-                    tx = contracts["bugSubmission"].functions.acceptSubmission(
-                        i
-                    ).build_transaction({"from": account.address, "nonce": nonce, "gas": 300_000})
-                    signed = account.sign_transaction(tx)
-                    tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
-                    w3.eth.wait_for_transaction_receipt(tx_hash)
-                    print(f"    → ACCEPTED bug #{i} (tx: {tx_hash.hex()})")
-                else:
-                    _send_dispute(w3, contracts, account, i)
-                    print(f"    → DISPUTED bug #{i}")
+                    if report is None:
+                        # Can't read report — dispute as safe fallback
+                        print(f"  Bug #{bug_id}: cannot decrypt report — DISPUTE (fallback)")
+                        _send_dispute(w3, contracts, account, bug_id)
+                        processed.add(bug_id)
+                        continue
 
-                processed.add(i)
+                    # 2. Triage via AI inference
+                    result = triage_submission(report, scope_source, claimed_severity)
+
+                    claimed_label = SEVERITY_LABELS[claimed_severity] if 0 <= claimed_severity < len(SEVERITY_LABELS) else "?"
+                    print(f"  Bug #{bug_id}: claimed={claimed_label} | "
+                          f"estimated={result['estimated_severity']} | "
+                          f"valid={result['valid']} | confidence={result['confidence']:.2f} | "
+                          f"action={result['action']}")
+                    print(f"    Reasoning: {result['reasoning']}")
+
+                    # 3. Execute decision
+                    nonce = w3.eth.get_transaction_count(account.address)
+                    if result["action"] == "ACCEPT":
+                        tx = contracts["bugSubmission"].functions.acceptSubmission(
+                            bug_id
+                        ).build_transaction({"from": account.address, "nonce": nonce, "gas": 300_000})
+                        signed = account.sign_transaction(tx)
+                        tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+                        w3.eth.wait_for_transaction_receipt(tx_hash)
+                        print(f"    → ACCEPTED bug #{bug_id} (tx: {tx_hash.hex()})")
+                    else:
+                        _send_dispute(w3, contracts, account, bug_id)
+                        print(f"    → DISPUTED bug #{bug_id}")
+
+                    processed.add(bug_id)
+
+                cursor.set_last_block(latest)
         except Exception as e:
             print(f"  [WARN] respond poll error: {e}")
         time.sleep(5)

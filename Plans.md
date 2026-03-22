@@ -247,5 +247,22 @@ Currently the hunter encrypts reports only for the executor. The protocol agent 
 
 ---
 
+## Phase 5: Event-Based Agent Indexing (Scalability Fix)
+
+Created: 2026-03-21 | Source: Feedback — agents do O(N) full scans instead of event-driven indexing
+
+All agents currently loop `for i in range(1, getSubmissionCount()+1)` every cycle — O(N) RPC calls per agent per cycle. With 4 agents and N submissions, that's ~4N calls/cycle where only 1-2 submissions are new.
+
+**Fix:** Use `get_logs(fromBlock, toBlock)` to listen for the specific event that triggers each agent's work, then fetch only the submission(s) mentioned in those events. `BlockCursor` already tracks the last block.
+
+| Task | 内容 | DoD | Depends | Status |
+|------|------|-----|---------|--------|
+| 5.1 | Refactor `executor/service.py` `main()` — replace full scan with `SubmissionDisputed` + `SubmissionAccepted` event polling via `get_logs` | Executor only makes O(1) RPC calls per cycle when no new events | - | cc:完了 |
+| 5.2 | Refactor `protocol/agent.py` `respond_to_submissions()` — replace full scan with `BugRevealed` event polling | Protocol agent only makes O(1) calls per idle cycle | - | cc:完了 |
+| 5.3 | Refactor `arbiter/agent.py` `run_arbiter()` — replace full scan with `JurySelected` event polling | Arbiter only processes bugs it's actually assigned to; O(1) idle cycles | - | cc:完了 |
+| 5.4 | Refactor `hunter/agent.py` watch mode — replace full bounty scan with `BountyCreated` event polling | Hunter only scans newly created bounties | - | cc:完了 |
+
+---
+
 ## Archive
 <!-- Completed tasks move here -->
