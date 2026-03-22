@@ -156,8 +156,8 @@ BugBounty.agent is an autonomous smart contract security marketplace where:
 │  Hunter Agent ──► Slither ──► Venice (reasoning) ──► Generate PoC          │
 │                                     │                                      │
 │                                     ▼                                      │
-│              BugSubmission.commitBug(bountyId, severity, hash, stake)      │
-│                     • Commit hash = keccak256(encryptedCID + salt)         │
+│              BugSubmission.commitBug(bountyId, commitHash, agentId, severity)│
+│                     • Commit hash = keccak256(abi.encode(CID, agentId, salt))│
 │                     • Stake USDC (skin in the game)                        │
 │                                                                            │
 │  3. REVEAL                                                                 │
@@ -177,7 +177,8 @@ BugBounty.agent is an autonomous smart contract security marketplace where:
 │                                                                            │
 │  5. ARBITRATION (if disputed)                                              │
 │  ────────────────────────────                                              │
-│  ArbiterContract.selectJury() ──► 3 arbiters chosen by reputation weight   │
+│  _selectJury() (internal, triggered by registerStateImpact)                │
+│    ──► 3 arbiters chosen by score-weighted random (prevrandao)             │
 │                                                                            │
 │  For each arbiter:                                                         │
 │    Arbiter ──► Venice API ──► Evaluate state diff ──► Return severity      │
@@ -188,9 +189,10 @@ BugBounty.agent is an autonomous smart contract security marketplace where:
 │                                                                            │
 │  6. RESOLUTION                                                             │
 │  ────────────                                                              │
-│  ArbiterContract.resolveSubmission(bugId)                                  │
-│    • Calculate reputation-weighted median                                  │
+│  Resolution (auto after 3rd reveal, or via resolveWithTimeout)             │
+│    • Calculate median severity from revealed votes                         │
 │    • Update arbiter reputations (+10 consensus, -5 dissent)                │
+│    • Call BugSubmission.resolveSubmission(bugId, severity, isValid)         │
 │    • Trigger payout via BountyRegistry                                     │
 │                                                                            │
 │  7. PAYOUT                                                                 │
@@ -271,19 +273,23 @@ struct Submission {
 ```
 
 **Key Functions:**
-- `commitBug(bountyId, severity, commitHash, stake)` — Phase 1: Commit
+- `commitBug(bountyId, commitHash, hunterAgentId, claimedSeverity)` — Phase 1: Commit (stake calculated from reputation)
 - `revealBug(bugId, encryptedCID, salt)` — Phase 2: Reveal
-- `resolveSubmission(bugId, finalSeverity, isValid)` — Called by ArbiterContract
+- `acceptSubmission(bugId)` — Protocol accepts within 72h (pays at claimed severity)
+- `disputeSubmission(bugId)` — Protocol disputes within 72h (triggers arbitration)
+- `autoAcceptOnTimeout(bugId)` — Anyone calls after 72h silence (auto-pays)
+- `resolveSubmission(bugId, finalSeverity, isValid)` — Called by ArbiterContract after arbitration
 
 **Commit-Reveal Scheme:**
 ```
 Phase 1 (Commit):
-  commitHash = keccak256(abi.encodePacked(encryptedCID, salt))
-  
+  commitHash = keccak256(abi.encode(encryptedCID, hunterAgentId, salt))
+
 Phase 2 (Reveal):
-  Verify: keccak256(abi.encodePacked(encryptedCID, salt)) == commitHash
-  
+  Verify: keccak256(abi.encode(encryptedCID, hunterAgentId, salt)) == commitHash
+
 Why: Prevents front-running. Protocol can't see the bug before hunter commits.
+      Including hunterAgentId prevents cross-hunter commit hash theft.
 ```
 
 #### ArbiterContract.sol
@@ -845,12 +851,14 @@ ARBITER3_KEY="0x6a7c69302ca494e3ca47e6ca7eb95235439f802bb8e40c75fdc71bf318c41203
 # 1. Hunter commits bug
 echo "=== Step 1: Hunter commits bug ==="
 ENCRYPTED_CID="ipfs://QmTestBugReport"
+HUNTER_AGENT_ID=2
 SALT=$(openssl rand -hex 32)
-COMMIT_HASH=$(cast keccak "$(echo -n "${ENCRYPTED_CID}${SALT}" | xxd -p -c 256)")
+# commitHash = keccak256(abi.encode(encryptedCID, hunterAgentId, salt))
+COMMIT_HASH=$(cast abi-encode "f(string,uint256,bytes32)" "$ENCRYPTED_CID" $HUNTER_AGENT_ID 0x$SALT | cast keccak)
 
 cast send $BUG_SUBMISSION \
-  "commitBug(uint256,uint8,bytes32,uint256)" \
-  1 4 $COMMIT_HASH 100000000 \
+  "commitBug(uint256,bytes32,uint256,uint8)" \
+  1 $COMMIT_HASH $HUNTER_AGENT_ID 4 \
   --private-key $HUNTER_KEY \
   --rpc-url $RPC
 
@@ -884,22 +892,21 @@ echo "=== Step 4: Arbiters vote ==="
 
 for KEY in $ARBITER1_KEY $ARBITER2_KEY $ARBITER3_KEY; do
   VOTE_SALT=$(openssl rand -hex 32)
-  VOTE_HASH=$(cast keccak "$(echo -n "40x${VOTE_SALT}" | xxd -p -c 256)")
-  
+  # voteHash = keccak256(abi.encode(severity, salt))
+  VOTE_HASH=$(cast abi-encode "f(uint8,bytes32)" 4 0x$VOTE_SALT | cast keccak)
+
   cast send $ARBITER_CONTRACT \
     "commitVote(uint256,bytes32)" 1 $VOTE_HASH \
     --private-key $KEY --rpc-url $RPC
 done
 
-# Reveal votes
+# Reveal votes (each arbiter reveals their severity + salt)
 cast send $ARBITER_CONTRACT "revealVote(uint256,uint8,bytes32)" 1 4 0x$VOTE_SALT \
   --private-key $ARBITER1_KEY --rpc-url $RPC
 # ... repeat for other arbiters
-
-# 5. Resolve
-echo "=== Step 5: Resolve ==="
-cast send $ARBITER_CONTRACT "resolveSubmission(uint256)" 1 \
-  --private-key $ARBITER1_KEY --rpc-url $RPC
+# Resolution happens automatically when the 3rd arbiter reveals.
+# If not all reveal in time, anyone can call:
+#   cast send $ARBITER_CONTRACT "resolveWithTimeout(uint256)" 1 --rpc-url $RPC
 
 # 6. Verify payout
 echo "=== Step 6: Verify payout ==="
@@ -924,9 +931,12 @@ event RemainderWithdrawn(uint256 indexed bountyId, uint256 amount);
 event BugCommitted(uint256 indexed bugId, uint256 indexed bountyId, uint256 indexed hunterAgentId, uint8 claimedSeverity);
 event BugRevealed(uint256 indexed bugId, string encryptedCID);
 event SubmissionResolved(uint256 indexed bugId, uint8 finalSeverity, bool isValid);
+event SubmissionAccepted(uint256 indexed bugId, uint8 claimedSeverity);
+event SubmissionDisputed(uint256 indexed bugId);
 
 // ArbiterContract
 event ArbiterRegistered(uint256 indexed arbiterAgentId);
+event ArbiterUnregistered(uint256 indexed arbiterAgentId);
 event StateImpactRegistered(uint256 indexed bugId, string stateImpactCID);
 event JurySelected(uint256 indexed bugId, uint256[3] jurors);
 event VoteCommitted(uint256 indexed bugId, uint256 indexed arbiterAgentId);
@@ -953,6 +963,8 @@ function getRemainingFunds(uint256 bountyId) external view returns (uint256);
 // BugSubmission
 function getSubmissionCount() external view returns (uint256);
 function getSubmission(uint256 bugId) external view returns (Submission memory);
+function getPendingCount(uint256 bountyId) external view returns (uint256);
+// Write: commitBug, revealBug, acceptSubmission, disputeSubmission, autoAcceptOnTimeout
 
 // ArbiterContract
 function getArbitration(uint256 bugId) external view returns (Arbitration memory);
@@ -1015,7 +1027,7 @@ decrypted = decrypt(protocol_private_key, encrypted)
 | ERC-8004 identity | ✅ IdentityRegistry — all agents have on-chain identity |
 | On-chain verifiability | ✅ Every submission, vote, payout recorded on-chain |
 | Autonomous execution | ✅ Agents operate without human intervention |
-| DevSpot compatibility | ✅ agent.json manifests, agent_log.json traces |
+| DevSpot compatibility | ⬜ agent.json manifests and agent_log.json traces planned but not yet implemented |
 | Safety guardrails | ✅ Arbiters only see State Impact JSON |
 
 ### Venice: Private Agents, Trusted Actions ($11,500)
