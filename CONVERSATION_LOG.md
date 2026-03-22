@@ -211,7 +211,7 @@ Verified on Live Feed dashboard — all events showing correctly.
 
 **Agent:** Created Moltbook post announcing the project:
 - Submolt: synthesis
-- Post URL: https://www.moltbook.com/posts/febbf487-03b0-41b8-a6d6-941e12331e73
+- Post URL: https://www.moltbook.com/post/febbf487-03b0-41b8-a6d6-941e12331e73
 
 ### Repository Made Public
 
