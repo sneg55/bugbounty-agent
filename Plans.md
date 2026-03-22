@@ -201,5 +201,51 @@ reveal → 72h window → protocol accepts (auto-pay) OR disputes (→ arbitrati
 
 ---
 
+## Phase 4: Evidence-Based Protocol Agent (Severity-Aware Accept/Dispute)
+
+Created: 2026-03-21 | Source: Feedback — agent autonomy is reactive, not adaptive
+
+The protocol agent currently disputes everything blindly. This phase makes it decrypt the bug report, ask Venice to assess validity and severity, and decide accept vs dispute based on evidence.
+
+**Decision logic after this phase:**
+```
+1. Decrypt hunter's bug report from IPFS
+2. Venice inference: "Is this valid? What severity?"
+3. If LLM says valid AND estimated severity within 1 tier of claim → ACCEPT
+4. If LLM says invalid OR severity mismatch ≥ 2 tiers → DISPUTE
+```
+
+### P1 — Enable Protocol to Read Bug Reports
+
+Currently the hunter encrypts reports only for the executor. The protocol agent needs access too.
+
+| Task | 内容 | DoD | Depends | Status |
+|------|------|-----|---------|--------|
+| 4.1 | Update `hunter/submitter.py` — dual-encrypt: produce two IPFS payloads, one for executor (existing), one for protocol. Store both CIDs in the encrypted payload or add `protocolEncryptedCID` to the upload. Simplest: encrypt the same `{report, poc}` payload with protocol's ECIES pubkey and include it as a second field in the IPFS JSON | Hunter fetches both executor and protocol pubkeys from chain; IPFS JSON has `encrypted` (for executor) and `protocolEncrypted` (for protocol) fields | - | cc:完了 |
+| 4.2 | Update `executor/service.py` — ignore the new `protocolEncrypted` field (read `encrypted` as before) | Executor still works unchanged; test passes | 4.1 | cc:完了 |
+
+### P2 — Protocol Triage Module
+
+| Task | 内容 | DoD | Depends | Status |
+|------|------|-----|---------|--------|
+| 4.3 | Create `protocol/triage.py` — `triage_submission(report, scope_source, claimed_severity) -> {"valid": bool, "estimated_severity": str, "confidence": float, "reasoning": str}`. Calls Venice via `common.inference.complete()` with a structured prompt. Returns parsed JSON | Unit test with mocked inference returns valid JSON with all fields | - | cc:完了 |
+| 4.4 | Add triage prompt template — system prompt instructs the LLM: given a bug report (finding, severity, strategy) and the in-scope contract source, assess (1) is this a real exploitable vulnerability, (2) what severity (LOW/MEDIUM/HIGH/CRITICAL), (3) confidence 0-1. Output JSON | Prompt template produces valid assessments for known test cases (mocked) | 4.3 | cc:完了 |
+
+### P3 — Wire Into Protocol Agent
+
+| Task | 内容 | DoD | Depends | Status |
+|------|------|-----|---------|--------|
+| 4.5 | Update `protocol/agent.py` `dispute_revealed_submissions()` → rename to `respond_to_submissions()`. For each revealed submission: (a) download + decrypt payload with protocol ECIES key, (b) fetch bounty scope from IPFS, (c) call `triage_submission()`, (d) if valid + severity within 1 tier → `acceptSubmission`, else → `disputeSubmission`. Log reasoning | Protocol agent accepts or disputes based on triage; prints reasoning for each decision | 4.1, 4.3 | cc:完了 |
+| 4.6 | Add decision logging — write each triage decision to stdout with: bugId, claimed severity, estimated severity, valid, confidence, action taken (ACCEPT/DISPUTE) | Log output shows evidence-based reasoning, not blind dispute | 4.5 | cc:完了 |
+
+### P4 — Tests
+
+| Task | 内容 | DoD | Depends | Status |
+|------|------|-----|---------|--------|
+| 4.7 | Unit test for `protocol/triage.py` — mock Venice response, verify JSON parsing, verify accept/dispute decision logic for: (a) valid + matching severity → accept, (b) valid + severity mismatch ≥ 2 → dispute, (c) invalid → dispute, (d) malformed LLM response → dispute (safe fallback) | `pytest agents/protocol/test_triage.py` passes with 4+ test cases | 4.3 | cc:完了 |
+| 4.8 | Update `test_submitter.py` if needed — verify dual-encryption payload structure | Existing tests pass; new test confirms `protocolEncrypted` field present | 4.1 | cc:完了 |
+
+---
+
 ## Archive
 <!-- Completed tasks move here -->

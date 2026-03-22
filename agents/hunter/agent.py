@@ -15,7 +15,7 @@ from hunter.submitter import submit_finding
 SEVERITY_MAP = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1}
 
 
-def scan_bounty(w3, contracts, bounty_id: int, hunter_agent_id: int, executor_pubkey: bytes):
+def scan_bounty(w3, contracts, bounty_id: int, hunter_agent_id: int, executor_pubkey: bytes, protocol_pubkey: bytes):
     """Scan a single bounty: fetch scope, analyze, submit findings."""
     bounty = contracts["bountyRegistry"].functions.getBounty(bounty_id).call()
     scope_uri = bounty[2]  # scopeURI
@@ -71,6 +71,7 @@ def scan_bounty(w3, contracts, bounty_id: int, hunter_agent_id: int, executor_pu
                 hunter_agent_id=hunter_agent_id,
                 claimed_severity=severity,
                 executor_pubkey=executor_pubkey,
+                protocol_pubkey=protocol_pubkey,
             )
             print(f"  Submitted bug #{result['bug_id']}")
 
@@ -92,8 +93,14 @@ def main():
         executor_agent_id, "eciesPubKey"
     ).call()
 
+    # Fetch protocol agent's ECIES public key from chain
+    protocol_agent_id = deployments["agentIds"]["protocol"]
+    protocol_pubkey = contracts["identityRegistry"].functions.getMetadata(
+        protocol_agent_id, "eciesPubKey"
+    ).call()
+
     if args.bounty_id:
-        scan_bounty(w3, contracts, args.bounty_id, hunter_agent_id, executor_pubkey)
+        scan_bounty(w3, contracts, args.bounty_id, hunter_agent_id, executor_pubkey, protocol_pubkey)
     elif args.watch:
         print("Watching for new bounties... (Ctrl+C to stop)")
         cursor = BlockCursor("hunter")
@@ -106,7 +113,7 @@ def main():
                 for i in range(1, count + 1):
                     if i not in seen_bounties:
                         seen_bounties.add(i)
-                        scan_bounty(w3, contracts, i, hunter_agent_id, executor_pubkey)
+                        scan_bounty(w3, contracts, i, hunter_agent_id, executor_pubkey, protocol_pubkey)
                 cursor.set_last_block(latest)
             time.sleep(10)
 

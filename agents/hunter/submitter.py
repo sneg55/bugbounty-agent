@@ -31,6 +31,7 @@ def submit_finding(
     hunter_agent_id: int,
     claimed_severity: int,
     executor_pubkey: bytes,
+    protocol_pubkey: bytes,
 ) -> dict:
     """Full submission flow: encrypt -> IPFS -> commit -> reveal."""
     w3 = get_web3()
@@ -38,12 +39,16 @@ def submit_finding(
     private_key = os.getenv("HUNTER_AGENT_PRIVATE_KEY")
     account = w3.eth.account.from_key(private_key)
 
-    # 1. Encrypt report + PoC with executor's public key
+    # 1. Encrypt report + PoC with executor's and protocol's public keys
     payload = json.dumps({"report": report, "poc": poc_source}).encode()
     encrypted = encrypt(executor_pubkey, payload)
+    protocol_encrypted = encrypt(protocol_pubkey, payload)
 
     # 2. Upload encrypted payload to IPFS
-    encrypted_cid = upload_json({"encrypted": encrypted.hex()})
+    encrypted_cid = upload_json({
+        "encrypted": encrypted.hex(),
+        "protocolEncrypted": protocol_encrypted.hex(),
+    })
 
     # 3. Generate salt and commit hash
     salt = secrets.token_bytes(32)

@@ -11,6 +11,7 @@ from common.contracts import get_web3, get_all_contracts
 from common.crypto import decrypt
 from common.ipfs import download_json
 from protocol.risk_model import get_default_tiers, get_default_funding
+from protocol.triage import triage_submission, SEVERITY_LABELS
 
 
 def create_bounty(
@@ -68,37 +69,111 @@ def create_bounty(
     return receipt
 
 
-def dispute_revealed_submissions(w3: Web3, contracts: dict, deployments: dict):
-    """Poll for revealed submissions with no protocol response and dispute each one."""
+def respond_to_submissions(w3: Web3, contracts: dict, deployments: dict):
+    """Poll for revealed submissions and make evidence-based accept/dispute decisions."""
     private_key = os.getenv("PROTOCOL_AGENT_PRIVATE_KEY")
+    ecies_key = os.getenv("PROTOCOL_ECIES_PRIVATE_KEY")
     account = w3.eth.account.from_key(private_key)
-    disputed = set()
+    processed = set()
 
-    print("Protocol Agent watching for revealed submissions to dispute... (Ctrl+C to stop)")
+    print("Protocol Agent responding to submissions (evidence-based triage)... (Ctrl+C to stop)")
 
     while True:
         try:
             bug_count = contracts["bugSubmission"].functions.getSubmissionCount().call()
             for i in range(1, bug_count + 1):
-                if i in disputed:
+                if i in processed:
                     continue
                 sub = contracts["bugSubmission"].functions.getSubmission(i).call()
-                status = sub[6]            # 0=Committed, 1=Revealed, 2=Resolved
+                status = sub[6]              # 0=Committed, 1=Revealed, 2=Resolved
                 protocol_response = sub[12]  # 0=None, 1=Accepted, 2=Disputed
-                if status == 1 and protocol_response == 0:
-                    print(f"  Disputing bug #{i}...")
-                    nonce = w3.eth.get_transaction_count(account.address)
-                    tx = contracts["bugSubmission"].functions.disputeSubmission(
+                if status != 1 or protocol_response != 0:
+                    continue
+
+                claimed_severity = sub[2]  # claimedSeverity
+                encrypted_cid = sub[4]     # encryptedCID
+                bounty_id = sub[0]         # bountyId
+
+                # 1. Download and decrypt the bug report
+                report, scope_source = _decrypt_and_fetch_scope(
+                    contracts, deployments, ecies_key, encrypted_cid, bounty_id
+                )
+
+                if report is None:
+                    # Can't read report — dispute as safe fallback
+                    print(f"  Bug #{i}: cannot decrypt report — DISPUTE (fallback)")
+                    _send_dispute(w3, contracts, account, i)
+                    processed.add(i)
+                    continue
+
+                # 2. Triage via AI inference
+                result = triage_submission(report, scope_source, claimed_severity)
+
+                claimed_label = SEVERITY_LABELS[claimed_severity] if 0 <= claimed_severity < len(SEVERITY_LABELS) else "?"
+                print(f"  Bug #{i}: claimed={claimed_label} | "
+                      f"estimated={result['estimated_severity']} | "
+                      f"valid={result['valid']} | confidence={result['confidence']:.2f} | "
+                      f"action={result['action']}")
+                print(f"    Reasoning: {result['reasoning']}")
+
+                # 3. Execute decision
+                nonce = w3.eth.get_transaction_count(account.address)
+                if result["action"] == "ACCEPT":
+                    tx = contracts["bugSubmission"].functions.acceptSubmission(
                         i
-                    ).build_transaction({"from": account.address, "nonce": nonce, "gas": 200_000})
+                    ).build_transaction({"from": account.address, "nonce": nonce, "gas": 300_000})
                     signed = account.sign_transaction(tx)
                     tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
                     w3.eth.wait_for_transaction_receipt(tx_hash)
-                    print(f"  Bug #{i} disputed (tx: {tx_hash.hex()})")
-                    disputed.add(i)
+                    print(f"    → ACCEPTED bug #{i} (tx: {tx_hash.hex()})")
+                else:
+                    _send_dispute(w3, contracts, account, i)
+                    print(f"    → DISPUTED bug #{i}")
+
+                processed.add(i)
         except Exception as e:
             print(f"  [WARN] respond poll error: {e}")
         time.sleep(5)
+
+
+def _decrypt_and_fetch_scope(contracts, deployments, ecies_key, encrypted_cid, bounty_id):
+    """Download IPFS payload, decrypt for protocol, and fetch bounty scope source."""
+    try:
+        cid = encrypted_cid.replace("ipfs://", "")
+        encrypted_data = download_json(cid)
+
+        # Decrypt the protocol-specific encrypted field
+        proto_hex = encrypted_data.get("protocolEncrypted")
+        if not proto_hex:
+            return None, ""
+
+        encrypted_bytes = bytes.fromhex(proto_hex)
+        decrypted = decrypt(ecies_key.encode(), encrypted_bytes)
+        payload = json.loads(decrypted)
+        report = payload.get("report", {})
+
+        # Fetch bounty scope to get the contract source
+        bounty = contracts["bountyRegistry"].functions.getBounty(bounty_id).call()
+        scope_uri = bounty[2]  # scopeURI
+        scope_data = download_json(scope_uri.replace("ipfs://", ""))
+        contract_name = report.get("contract", "")
+        scope_source = scope_data.get("contracts", {}).get(contract_name, "")
+
+        return report, scope_source
+    except Exception as e:
+        print(f"    [WARN] Decryption/scope fetch failed: {e}")
+        return None, ""
+
+
+def _send_dispute(w3, contracts, account, bug_id):
+    """Send a disputeSubmission transaction."""
+    nonce = w3.eth.get_transaction_count(account.address)
+    tx = contracts["bugSubmission"].functions.disputeSubmission(
+        bug_id
+    ).build_transaction({"from": account.address, "nonce": nonce, "gas": 200_000})
+    signed = account.sign_transaction(tx)
+    tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+    w3.eth.wait_for_transaction_receipt(tx_hash)
 
 
 def main():
@@ -117,7 +192,7 @@ def main():
         agent_id = deployments["agentIds"]["protocol"]
         create_bounty(w3, contracts, agent_id, args.name, args.scope_uri, args.deadline)
     elif args.command == "respond":
-        dispute_revealed_submissions(w3, contracts, deployments)
+        respond_to_submissions(w3, contracts, deployments)
     elif args.command == "watch":
         print("Watching for SubmissionResolved and PatchGuidance events... (Ctrl+C to stop)")
         ecies_key = os.getenv("PROTOCOL_ECIES_PRIVATE_KEY")
