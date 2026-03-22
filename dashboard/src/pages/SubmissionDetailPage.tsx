@@ -34,7 +34,22 @@ const SEVERITY_COLORS: Record<number, string> = {
   4: '#ef4444',
 }
 
-const PIPELINE_STAGES = ['COMMITTED', 'REVEALED', 'EXECUTING', 'ARBITRATING', 'RESOLVED']
+const PIPELINE_STAGES = ['COMMITTED', 'REVEALED', 'DISPUTED', 'ARBITRATING', 'RESOLVED']
+
+/**
+ * Derive pipeline position from contract state.
+ * BugSubmission.Status: 0=Committed, 1=Revealed, 2=Resolved
+ * ArbiterContract.Phase: 0=AwaitingStateImpact, 1=Voting, 2=Revealing, 3=Resolved
+ */
+export function derivePipelineState(submissionStatus: number, arbiterPhase: number | null): number {
+  if (submissionStatus === 0) return 0 // COMMITTED
+  if (submissionStatus === 2) return 4 // RESOLVED
+  // status === 1 (Revealed) — check arbiter phase for more detail
+  if (arbiterPhase === null || arbiterPhase === 0) return 1 // REVEALED (awaiting dispute or state impact)
+  if (arbiterPhase === 1 || arbiterPhase === 2) return 3   // ARBITRATING (voting/revealing)
+  if (arbiterPhase === 3) return 4                          // RESOLVED via arbitration
+  return 2                                                  // DISPUTED (state impact registered)
+}
 
 async function fetchSubmission(bugId: number): Promise<SubmissionData> {
   const provider = getProvider()
@@ -187,7 +202,7 @@ export default function SubmissionDetailPage() {
 
       {submission && (
         <>
-          <PipelineProgress state={submission.status} />
+          <PipelineProgress state={derivePipelineState(submission.status, arbitration?.phase ?? null)} />
 
           {/* Metadata table */}
           <div className="border border-[#333] mb-8" style={{ borderRadius: 0 }}>

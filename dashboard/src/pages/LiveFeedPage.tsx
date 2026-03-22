@@ -29,7 +29,7 @@ const EVENT_TYPE_COLORS: Record<string, string> = {
   PatchGuidance: '#f59e0b',
 }
 
-function formatEvent(eventName: string, args: ethers.Result): string {
+export function formatEvent(eventName: string, args: ethers.Result): string {
   switch (eventName) {
     case 'BountyCreated':
       return `Bounty #${args[0]} created: "${args[2]}" — max ${ethers.formatUnits(args[3], 6)} USDC`

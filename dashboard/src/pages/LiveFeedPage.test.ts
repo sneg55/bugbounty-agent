@@ -1,37 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { ethers } from 'ethers'
-
-// Re-implement formatEvent here since it's not exported.
-// This tests the logic in isolation; keeps the production file untouched.
-const SEVERITY_LABELS = ['INVALID', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
-
-function formatEvent(eventName: string, args: ethers.Result): string {
-  switch (eventName) {
-    case 'BountyCreated':
-      return `Bounty #${args[0]} created: "${args[2]}" — max ${ethers.formatUnits(args[3], 6)} USDC`
-    case 'BugCommitted':
-      return `Bug #${args[0]} committed to Bounty #${args[1]} by Agent #${args[2]}`
-    case 'BugRevealed':
-      return `Bug #${args[0]} revealed — CID: ${String(args[1]).slice(0, 30)}...`
-    case 'StateImpactRegistered':
-      return `State impact registered for Bug #${args[0]}`
-    case 'JurySelected':
-      return `Jury selected for Bug #${args[0]} — ${(args[1] as bigint[]).length} jurors`
-    case 'VoteCommitted':
-      return `Juror #${args[1]} committed vote for Bug #${args[0]}`
-    case 'VoteRevealed':
-      return `Juror #${args[1]} revealed vote for Bug #${args[0]}: severity ${args[2]}`
-    case 'SubmissionResolved': {
-      const severity = Number(args[1])
-      const isValid = args[2]
-      return `Bug #${args[0]} resolved — ${SEVERITY_LABELS[severity] || 'UNKNOWN'} severity, ${isValid ? 'valid' : 'invalid'}`
-    }
-    case 'PatchGuidance':
-      return `Patch guidance issued for Bug #${args[0]}`
-    default:
-      return eventName
-  }
-}
+import { formatEvent } from './LiveFeedPage'
 
 describe('formatEvent', () => {
   it('formats BountyCreated', () => {

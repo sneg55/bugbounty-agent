@@ -99,7 +99,7 @@ describe('SubmissionDetailPage', () => {
     })
 
     expect(screen.getByText('COMMITTED')).toBeInTheDocument()
-    expect(screen.getByText('EXECUTING')).toBeInTheDocument()
+    expect(screen.getByText('DISPUTED')).toBeInTheDocument()
     expect(screen.getByText('ARBITRATING')).toBeInTheDocument()
   })
 

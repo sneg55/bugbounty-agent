@@ -8,18 +8,24 @@ interface Agent {
   owner: string
   uri: string
   reputation: number
+  validityRate: number
+  role: { label: string; color: string }
 }
 
-const ROLE_DEFS: { label: string; color: string }[] = [
-  { label: 'PROTOCOL', color: '#a855f7' },
-  { label: 'HUNTER', color: '#06b6d4' },
-  { label: 'EXECUTOR', color: '#f59e0b' },
-  { label: 'ARBITER', color: '#10b981' },
-]
+const ROLE_COLORS: Record<string, string> = {
+  PROTOCOL: '#a855f7',
+  HUNTER: '#06b6d4',
+  EXECUTOR: '#f59e0b',
+  ARBITER: '#10b981',
+}
 
-function inferRole(agentId: number): { label: string; color: string } {
-  const idx = (agentId - 1) % ROLE_DEFS.length
-  return ROLE_DEFS[idx]
+export function roleFromURI(uri: string): { label: string; color: string } {
+  const lower = uri.toLowerCase()
+  if (lower.includes('protocol')) return { label: 'PROTOCOL', color: ROLE_COLORS.PROTOCOL }
+  if (lower.includes('hunter')) return { label: 'HUNTER', color: ROLE_COLORS.HUNTER }
+  if (lower.includes('executor')) return { label: 'EXECUTOR', color: ROLE_COLORS.EXECUTOR }
+  if (lower.includes('arb')) return { label: 'ARBITER', color: ROLE_COLORS.ARBITER }
+  return { label: 'UNKNOWN', color: '#6b7280' }
 }
 
 async function fetchAgents(): Promise<Agent[]> {
@@ -40,16 +46,20 @@ async function fetchAgents(): Promise<Agent[]> {
   const agents: Agent[] = []
 
   for (let i = 1; i <= total; i++) {
-    const [owner, uri, rep] = await Promise.all([
+    const [owner, uri, rep, validity] = await Promise.all([
       identityContract.ownerOf(i),
       identityContract.tokenURI(i),
       reputationContract.getReputation(i),
+      reputationContract.getValidityRate(i),
     ])
+    const uriStr = uri as string
     agents.push({
       id: i,
       owner: owner as string,
-      uri: uri as string,
+      uri: uriStr,
       reputation: Number(rep),
+      validityRate: Number(validity),
+      role: roleFromURI(uriStr),
     })
   }
 
@@ -116,7 +126,6 @@ export default function AgentsPage() {
             </thead>
             <tbody>
               {agents.map((agent) => {
-                const role = inferRole(agent.id)
                 const repColor = agent.reputation >= 0 ? '#10b981' : '#ef4444'
                 return (
                   <tr
@@ -128,10 +137,10 @@ export default function AgentsPage() {
                       <div className="flex items-center gap-2">
                         <span
                           className="inline-block w-2 h-2"
-                          style={{ borderRadius: 0, backgroundColor: role.color }}
+                          style={{ borderRadius: 0, backgroundColor: agent.role.color }}
                         />
-                        <span className="font-extrabold" style={{ color: role.color }}>
-                          {role.label}
+                        <span className="font-extrabold" style={{ color: agent.role.color }}>
+                          {agent.role.label}
                         </span>
                       </div>
                     </td>
@@ -141,7 +150,9 @@ export default function AgentsPage() {
                     <td className="px-4 py-3 text-right font-extrabold" style={{ color: repColor }}>
                       {agent.reputation >= 0 ? '+' : ''}{agent.reputation}
                     </td>
-                    <td className="px-4 py-3 text-right text-[#6b7280]">—</td>
+                    <td className="px-4 py-3 text-right text-white font-extrabold">
+                      {agent.validityRate}%
+                    </td>
                   </tr>
                 )
               })}
