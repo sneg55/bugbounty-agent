@@ -204,7 +204,7 @@ contract BugSubmission {
         bountyRegistry.deductPayout(sub.bountyId, payout, sub.hunterWallet);
 
         emit SubmissionAccepted(bugId, severity);
-        emit SubmissionResolved(bugId, sub.claimedSeverity, true);
+        emit SubmissionResolved(bugId, severity, true);
     }
 
     function disputeSubmission(uint256 bugId) external {

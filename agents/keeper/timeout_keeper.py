@@ -23,7 +23,9 @@ def main():
 
     print(f"Timeout keeper running (wallet: {account.address})... (Ctrl+C to stop)")
     cursor = BlockCursor("keeper")
-    triggered = set()
+    # Track pending submissions: bug_id -> revealedAt timestamp
+    pending = {}
+    completed = set()
 
     while True:
         try:
@@ -31,50 +33,73 @@ def main():
             last = cursor.get_last_block()
 
             if latest > last:
-                # Watch for BugRevealed events to track submissions entering the dispute window
+                # Discover newly revealed submissions
                 revealed_events = contracts["bugSubmission"].events.BugRevealed.get_logs(
                     fromBlock=last + 1, toBlock=latest
                 )
                 for event in revealed_events:
-                    bug_id = event["args"]["bugId"]
-                    if bug_id in triggered:
-                        continue
+                    bug_id = int(event["args"]["bugId"])
+                    if bug_id not in completed and bug_id not in pending:
+                        sub = contracts["bugSubmission"].functions.getSubmission(bug_id).call()
+                        revealed_at = sub[11]
+                        if revealed_at > 0:
+                            pending[bug_id] = revealed_at
 
-                    sub = contracts["bugSubmission"].functions.getSubmission(bug_id).call()
-                    status = sub[6]              # 0=Committed, 1=Revealed, 2=Resolved
-                    protocol_response = sub[12]  # 0=None, 1=Accepted, 2=Disputed
-                    revealed_at = sub[11]         # timestamp
-
-                    if status != 1 or protocol_response != 0:
-                        # Already handled (accepted, disputed, or resolved)
-                        triggered.add(bug_id)
-                        continue
-
-                    now = int(time.time())
-                    if revealed_at > 0 and now > revealed_at + DISPUTE_WINDOW_SECONDS:
-                        print(f"  Bug #{bug_id}: dispute window expired — calling autoAcceptOnTimeout")
-                        try:
-                            nonce = w3.eth.get_transaction_count(account.address)
-                            tx = contracts["bugSubmission"].functions.autoAcceptOnTimeout(
-                                bug_id
-                            ).build_transaction({
-                                "from": account.address,
-                                "nonce": nonce,
-                                "gas": 300_000,
-                            })
-                            signed = account.sign_transaction(tx)
-                            tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
-                            w3.eth.wait_for_transaction_receipt(tx_hash)
-                            print(f"    autoAcceptOnTimeout called (tx: {tx_hash.hex()})")
-                            triggered.add(bug_id)
-                        except Exception as e:
-                            print(f"    [WARN] autoAcceptOnTimeout failed for bug #{bug_id}: {e}")
+                # Discover accepted/disputed (remove from pending)
+                for event_type in ["SubmissionAccepted", "SubmissionDisputed", "SubmissionResolved"]:
+                    try:
+                        events = getattr(contracts["bugSubmission"].events, event_type).get_logs(
+                            fromBlock=last + 1, toBlock=latest
+                        )
+                        for event in events:
+                            bug_id = int(event["args"]["bugId"])
+                            pending.pop(bug_id, None)
+                            completed.add(bug_id)
+                    except Exception:
+                        pass
 
                 cursor.set_last_block(latest)
+
+            # Re-check ALL pending submissions for timeout
+            now = int(time.time())
+            expired = []
+            for bug_id, revealed_at in pending.items():
+                if now > revealed_at + DISPUTE_WINDOW_SECONDS:
+                    expired.append(bug_id)
+
+            for bug_id in expired:
+                # Verify still pending on-chain (may have been handled between cycles)
+                sub = contracts["bugSubmission"].functions.getSubmission(bug_id).call()
+                status = sub[6]
+                protocol_response = sub[12]
+                if status != 1 or protocol_response != 0:
+                    pending.pop(bug_id, None)
+                    completed.add(bug_id)
+                    continue
+
+                print(f"  Bug #{bug_id}: dispute window expired — calling autoAcceptOnTimeout")
+                try:
+                    nonce = w3.eth.get_transaction_count(account.address)
+                    tx = contracts["bugSubmission"].functions.autoAcceptOnTimeout(
+                        bug_id
+                    ).build_transaction({
+                        "from": account.address,
+                        "nonce": nonce,
+                        "gas": 300_000,
+                    })
+                    signed = account.sign_transaction(tx)
+                    tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+                    w3.eth.wait_for_transaction_receipt(tx_hash)
+                    print(f"    autoAcceptOnTimeout called (tx: {tx_hash.hex()})")
+                    pending.pop(bug_id, None)
+                    completed.add(bug_id)
+                except Exception as e:
+                    print(f"    [WARN] autoAcceptOnTimeout failed for bug #{bug_id}: {e}")
+
         except Exception as e:
             print(f"  [WARN] keeper poll error: {e}")
 
-        time.sleep(30)  # Check every 30 seconds
+        time.sleep(30)
 
 
 if __name__ == "__main__":

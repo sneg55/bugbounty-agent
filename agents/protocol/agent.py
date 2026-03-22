@@ -129,7 +129,10 @@ def respond_to_submissions(w3: Web3, contracts: dict, deployments: dict):
                         state_diff_summary = f"exploit={'PASS' if exploit_succeeded else 'FAIL'}, balanceChanges={len(si.get('balanceChanges', []))}, storageChanges={len(si.get('storageChanges', []))}"
                         print(f"  Bug #{bug_id}: verification available — PoC {'PASS' if exploit_succeeded else 'FAIL'}")
                     else:
-                        print(f"  Bug #{bug_id}: no verification cache — triaging from report only")
+                        print(f"  Bug #{bug_id}: [WARN] no verification cache — triaging from report only (reduced confidence)")
+                        # Without objective PoC verification, dispute by default unless
+                        # the triage confidence is very high. This is handled by the
+                        # triage module: exploit_succeeded=None falls through to LLM.
 
                     # 3. Triage via AI inference + objective evidence
                     result = triage_submission(

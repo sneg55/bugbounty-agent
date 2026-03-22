@@ -168,8 +168,8 @@ BugBounty.agent is an autonomous smart contract security marketplace where:
 │                                                                            │
 │  4. ACCEPT OR DISPUTE                                                      │
 │  ────────────────────                                                      │
-│  Protocol Agent ──► Accept: BugSubmission.acceptSubmission(bugId)          │
-│                         • Auto-payout at claimed severity                  │
+│  Protocol Agent ──► Accept: BugSubmission.acceptSubmission(bugId, severity)│
+│                         • Payout at min(claimed, estimated) severity      │
 │                                                                            │
 │                 ──► Dispute: ArbiterContract.registerStateImpact(...)      │
 │                         • Upload state diff JSON                           │
@@ -275,7 +275,7 @@ struct Submission {
 **Key Functions:**
 - `commitBug(bountyId, commitHash, hunterAgentId, claimedSeverity)` — Phase 1: Commit (stake calculated from reputation)
 - `revealBug(bugId, encryptedCID, salt)` — Phase 2: Reveal
-- `acceptSubmission(bugId)` — Protocol accepts within 72h (pays at claimed severity)
+- `acceptSubmission(bugId, severity)` — Protocol accepts within 72h at specified severity (1..claimedSeverity)
 - `disputeSubmission(bugId)` — Protocol disputes within 72h (triggers arbitration)
 - `autoAcceptOnTimeout(bugId)` — Anyone calls after 72h silence (auto-pays)
 - `resolveSubmission(bugId, finalSeverity, isValid)` — Called by ArbiterContract after arbitration

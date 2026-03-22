@@ -302,11 +302,11 @@ def main():
             for event in disputed_events:
                 bug_id = event["args"]["bugId"]
                 if bug_id not in registered:
-                    registered.add(bug_id)
                     try:
                         register_on_chain(w3, contracts, bug_id, None, deployments)
+                        registered.add(bug_id)
                     except Exception as e:
-                        print(f"  Error registering bug #{bug_id}: {e}")
+                        print(f"  Error registering bug #{bug_id}: {e} (will retry next cycle)")
 
             # 3. Log accepted submissions
             accepted_events = contracts["bugSubmission"].events.SubmissionAccepted.get_logs(
