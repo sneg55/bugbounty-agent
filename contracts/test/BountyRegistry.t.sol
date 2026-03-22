@@ -130,6 +130,36 @@ contract BountyRegistryTest is Test {
         assertEq(bountyRegistry.getBountyCount(), 2);
     }
 
+    function test_revert_underfunded_bounty() public {
+        vm.prank(protocolOwner);
+        vm.expectRevert("Funding must cover at least one critical payout");
+        bountyRegistry.createBounty(
+            protocolAgentId, "Underfunded", "ipfs://scope",
+            BountyRegistry.Tiers(25_000e6, 10_000e6, 2_000e6, 500e6),
+            10_000e6, // funding < critical tier
+            block.timestamp + 1 days, 0
+        );
+    }
+
+    function test_revert_misordered_tiers() public {
+        vm.prank(protocolOwner);
+        vm.expectRevert("Tiers must be ordered: high >= medium");
+        bountyRegistry.createBounty(
+            protocolAgentId, "BadTiers", "ipfs://scope",
+            BountyRegistry.Tiers(25_000e6, 1_000e6, 5_000e6, 500e6), // high < medium
+            25_000e6, block.timestamp + 1 days, 0
+        );
+    }
+
+    function test_revert_zero_low_tier() public {
+        vm.prank(protocolOwner);
+        vm.expectRevert("Low tier must be > 0");
+        bountyRegistry.createBounty(
+            protocolAgentId, "ZeroLow", "ipfs://scope",
+            BountyRegistry.Tiers(25_000e6, 10_000e6, 2_000e6, 0),
+            25_000e6, block.timestamp + 1 days, 0
+        );
+    }
 }
 
 // Separate test contract to avoid stack-too-deep in the pending-submissions test

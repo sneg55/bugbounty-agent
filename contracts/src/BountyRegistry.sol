@@ -76,6 +76,11 @@ contract BountyRegistry {
         require(identityRegistry.ownerOf(protocolAgentId) == msg.sender, "Not agent owner");
         require(deadline > block.timestamp, "Deadline must be in the future");
         require(funding > 0, "Funding must be > 0");
+        require(tiers.low > 0, "Low tier must be > 0");
+        require(tiers.medium >= tiers.low, "Tiers must be ordered: medium >= low");
+        require(tiers.high >= tiers.medium, "Tiers must be ordered: high >= medium");
+        require(tiers.critical >= tiers.high, "Tiers must be ordered: critical >= high");
+        require(funding >= tiers.critical, "Funding must cover at least one critical payout");
 
         _nextBountyId++;
         uint256 bountyId = _nextBountyId;

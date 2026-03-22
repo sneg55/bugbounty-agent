@@ -215,7 +215,7 @@ contract FullLifecycleTest is Test {
         uint256 bountyId2 = bountyReg.createBounty(
             1, "SecureProtocol", "ipfs://scope2",
             BountyRegistry.Tiers(25_000e6, 10_000e6, 2_000e6, 500e6),
-            10_000e6, block.timestamp + 30 days, 50
+            25_000e6, block.timestamp + 30 days, 50
         );
 
         // Hunter has rep=0; commitBug should revert
