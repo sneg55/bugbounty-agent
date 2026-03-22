@@ -251,13 +251,13 @@ Human involvement: None
 ### Deployed Contracts (All Verified)
 | Contract | Address | Verification |
 |----------|---------|--------------|
-| MockUSDC | `0x003e27d8A04f7bC450D8ac03b72c7318f6204b1C` | [✅ Verified](https://sepolia.basescan.org/address/0x003e27d8A04f7bC450D8ac03b72c7318f6204b1C#code) |
-| IdentityRegistry | `0x5d438B26aa2FeE1874499ff4705aF72bc6107D44` | [✅ Verified](https://sepolia.basescan.org/address/0x5d438B26aa2FeE1874499ff4705aF72bc6107D44#code) |
-| ReputationRegistry | `0x2606f45324cA04Aa3C2153cD2d5E00abd719E6ae` | [✅ Verified](https://sepolia.basescan.org/address/0x2606f45324cA04Aa3C2153cD2d5E00abd719E6ae#code) |
-| ValidationRegistry | `0x31eCCF46166AFD87c917Cc45A864551B5298F98a` | [✅ Verified](https://sepolia.basescan.org/address/0x31eCCF46166AFD87c917Cc45A864551B5298F98a#code) |
-| BountyRegistry | `0xb8926B097FB26883b550aDdC191b4F75F24Ea4Aa` | [✅ Verified](https://sepolia.basescan.org/address/0xb8926B097FB26883b550aDdC191b4F75F24Ea4Aa#code) |
-| BugSubmission | `0x919c1Da141Cb1456Aa150292c562f7A969234C20` | [✅ Verified](https://sepolia.basescan.org/address/0x919c1Da141Cb1456Aa150292c562f7A969234C20#code) |
-| ArbiterContract | `0x28e83212a1D98c2172c716B58aFF54029f34b413` | [✅ Verified](https://sepolia.basescan.org/address/0x28e83212a1D98c2172c716B58aFF54029f34b413#code) |
+| MockUSDC | `0x560e5561b0ac56564dF89c76281CF3A5E769326a` | [✅ Verified](https://sepolia.basescan.org/address/0x560e5561b0ac56564dF89c76281CF3A5E769326a#code) |
+| IdentityRegistry | `0x1bfE63Afa9B7871a9405feEc1A6B861Dc81Df7C6` | [✅ Verified](https://sepolia.basescan.org/address/0x1bfE63Afa9B7871a9405feEc1A6B861Dc81Df7C6#code) |
+| ReputationRegistry | `0x36e2bf7f379875516FeB031a1e60b1672eaa74A6` | [✅ Verified](https://sepolia.basescan.org/address/0x36e2bf7f379875516FeB031a1e60b1672eaa74A6#code) |
+| ValidationRegistry | `0x971EF90039e071Fa83d1a43C67d461E00B4C387C` | [✅ Verified](https://sepolia.basescan.org/address/0x971EF90039e071Fa83d1a43C67d461E00B4C387C#code) |
+| BountyRegistry | `0xCf3a5463623b2f79911d6Ea3064B0062F6B10136` | [✅ Verified](https://sepolia.basescan.org/address/0xCf3a5463623b2f79911d6Ea3064B0062F6B10136#code) |
+| BugSubmission | `0xDB70312837a1a15CfBFE274ed97F488E2d14A642` | [✅ Verified](https://sepolia.basescan.org/address/0xDB70312837a1a15CfBFE274ed97F488E2d14A642#code) |
+| ArbiterContract | `0xde603264F6D3b5f4c24b2aa1AF2F9a24D1472833` | [✅ Verified](https://sepolia.basescan.org/address/0xde603264F6D3b5f4c24b2aa1AF2F9a24D1472833#code) |
 
 ### On-Chain Transactions
 | Action | Transaction |

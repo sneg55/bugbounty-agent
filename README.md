@@ -8,7 +8,7 @@
 [![Venice AI](https://img.shields.io/badge/AI-Venice%20API-purple)](https://venice.ai/)
 
 **Live Dashboard:** [dashboard-two-lovat-68.vercel.app](https://dashboard-two-lovat-68.vercel.app)  
-**Deployed Contracts:** [Base Sepolia](https://sepolia.basescan.org/address/0xb8926B097FB26883b550aDdC191b4F75F24Ea4Aa)
+**Deployed Contracts:** [Base Sepolia](https://sepolia.basescan.org/address/0xCf3a5463623b2f79911d6Ea3064B0062F6B10136)
 
 ---
 
@@ -213,13 +213,13 @@ BugBounty.agent is an autonomous smart contract security marketplace where:
 
 | Contract | Address | Description |
 |----------|---------|-------------|
-| **MockUSDC** | [`0x003e27d8A04f7bC450D8ac03b72c7318f6204b1C`](https://sepolia.basescan.org/address/0x003e27d8A04f7bC450D8ac03b72c7318f6204b1C) | Test USDC token |
-| **IdentityRegistry** | [`0x5d438B26aa2FeE1874499ff4705aF72bc6107D44`](https://sepolia.basescan.org/address/0x5d438B26aa2FeE1874499ff4705aF72bc6107D44) | ERC-8004 agent identities |
-| **ReputationRegistry** | [`0x2606f45324cA04Aa3C2153cD2d5E00abd719E6ae`](https://sepolia.basescan.org/address/0x2606f45324cA04Aa3C2153cD2d5E00abd719E6ae) | On-chain reputation scores |
-| **ValidationRegistry** | [`0x31eCCF46166AFD87c917Cc45A864551B5298F98a`](https://sepolia.basescan.org/address/0x31eCCF46166AFD87c917Cc45A864551B5298F98a) | Validation request tracking |
-| **BountyRegistry** | [`0xb8926B097FB26883b550aDdC191b4F75F24Ea4Aa`](https://sepolia.basescan.org/address/0xb8926B097FB26883b550aDdC191b4F75F24Ea4Aa) | Bounty creation & escrow |
-| **BugSubmission** | [`0x919c1Da141Cb1456Aa150292c562f7A969234C20`](https://sepolia.basescan.org/address/0x919c1Da141Cb1456Aa150292c562f7A969234C20) | Bug commit/reveal |
-| **ArbiterContract** | [`0x28e83212a1D98c2172c716B58aFF54029f34b413`](https://sepolia.basescan.org/address/0x28e83212a1D98c2172c716B58aFF54029f34b413) | Jury selection & voting |
+| **MockUSDC** | [`0x560e5561b0ac56564dF89c76281CF3A5E769326a`](https://sepolia.basescan.org/address/0x560e5561b0ac56564dF89c76281CF3A5E769326a) | Test USDC token |
+| **IdentityRegistry** | [`0x1bfE63Afa9B7871a9405feEc1A6B861Dc81Df7C6`](https://sepolia.basescan.org/address/0x1bfE63Afa9B7871a9405feEc1A6B861Dc81Df7C6) | ERC-8004 agent identities |
+| **ReputationRegistry** | [`0x36e2bf7f379875516FeB031a1e60b1672eaa74A6`](https://sepolia.basescan.org/address/0x36e2bf7f379875516FeB031a1e60b1672eaa74A6) | On-chain reputation scores |
+| **ValidationRegistry** | [`0x971EF90039e071Fa83d1a43C67d461E00B4C387C`](https://sepolia.basescan.org/address/0x971EF90039e071Fa83d1a43C67d461E00B4C387C) | Validation request tracking |
+| **BountyRegistry** | [`0xCf3a5463623b2f79911d6Ea3064B0062F6B10136`](https://sepolia.basescan.org/address/0xCf3a5463623b2f79911d6Ea3064B0062F6B10136) | Bounty creation & escrow |
+| **BugSubmission** | [`0xDB70312837a1a15CfBFE274ed97F488E2d14A642`](https://sepolia.basescan.org/address/0xDB70312837a1a15CfBFE274ed97F488E2d14A642) | Bug commit/reveal |
+| **ArbiterContract** | [`0xde603264F6D3b5f4c24b2aa1AF2F9a24D1472833`](https://sepolia.basescan.org/address/0xde603264F6D3b5f4c24b2aa1AF2F9a24D1472833) | Jury selection & voting |
 
 ### Contract Details
 
@@ -703,13 +703,13 @@ vercel --prod
 ```typescript
 // dashboard/src/contracts.ts
 export const CONTRACT_ADDRESSES = {
-  bountyRegistry: '0xb8926B097FB26883b550aDdC191b4F75F24Ea4Aa',
-  bugSubmission: '0x919c1Da141Cb1456Aa150292c562f7A969234C20',
-  arbiterContract: '0x28e83212a1D98c2172c716B58aFF54029f34b413',
-  identityRegistry: '0x5d438B26aa2FeE1874499ff4705aF72bc6107D44',
-  reputationRegistry: '0x2606f45324cA04Aa3C2153cD2d5E00abd719E6ae',
-  validationRegistry: '0x31eCCF46166AFD87c917Cc45A864551B5298F98a',
-  mockUSDC: '0x003e27d8A04f7bC450D8ac03b72c7318f6204b1C',
+  bountyRegistry: '0xCf3a5463623b2f79911d6Ea3064B0062F6B10136',
+  bugSubmission: '0xDB70312837a1a15CfBFE274ed97F488E2d14A642',
+  arbiterContract: '0xde603264F6D3b5f4c24b2aa1AF2F9a24D1472833',
+  identityRegistry: '0x1bfE63Afa9B7871a9405feEc1A6B861Dc81Df7C6',
+  reputationRegistry: '0x36e2bf7f379875516FeB031a1e60b1672eaa74A6',
+  validationRegistry: '0x971EF90039e071Fa83d1a43C67d461E00B4C387C',
+  mockUSDC: '0x560e5561b0ac56564dF89c76281CF3A5E769326a',
 }
 ```
 
@@ -837,10 +837,10 @@ set -e
 
 # Config
 RPC="https://sepolia.base.org"
-BOUNTY_REGISTRY="0xb8926B097FB26883b550aDdC191b4F75F24Ea4Aa"
-BUG_SUBMISSION="0x919c1Da141Cb1456Aa150292c562f7A969234C20"
-ARBITER_CONTRACT="0x28e83212a1D98c2172c716B58aFF54029f34b413"
-USDC="0x003e27d8A04f7bC450D8ac03b72c7318f6204b1C"
+BOUNTY_REGISTRY="0xCf3a5463623b2f79911d6Ea3064B0062F6B10136"
+BUG_SUBMISSION="0xDB70312837a1a15CfBFE274ed97F488E2d14A642"
+ARBITER_CONTRACT="0xde603264F6D3b5f4c24b2aa1AF2F9a24D1472833"
+USDC="0x560e5561b0ac56564dF89c76281CF3A5E769326a"
 
 # Keys (from wallets.json)
 HUNTER_KEY="0xf6f57f3f2d51bb6ac24623dc5a91deed8846c1f21eb06c25f6af8af4a7201634"
@@ -1067,7 +1067,7 @@ MIT License — see [LICENSE](LICENSE)
 
 - **GitHub:** https://github.com/sneg55/bugbounty-agent
 - **Dashboard:** https://dashboard-two-lovat-68.vercel.app
-- **BaseScan:** https://sepolia.basescan.org/address/0xb8926B097FB26883b550aDdC191b4F75F24Ea4Aa
+- **BaseScan:** https://sepolia.basescan.org/address/0xCf3a5463623b2f79911d6Ea3064B0062F6B10136
 
 ---
 
