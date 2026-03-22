@@ -18,12 +18,29 @@ from executor.state_diff import build_state_impact_json, parse_forge_trace
 # Minimum severity for patch guidance (HIGH = 3)
 PATCH_GUIDANCE_MIN_SEVERITY = 3
 
+_VERIFICATION_CACHE_PATH = ".verification_cache.json"
 
-def process_revealed_bug(w3: Web3, contracts: dict, bug_id: int, deployments: dict):
-    """Full executor pipeline for a revealed bug."""
-    private_key = os.getenv("EXECUTOR_PRIVATE_KEY")
+
+def load_verification_cache() -> dict:
+    """Read the verification cache from disk. Returns an empty dict if the file does not exist."""
+    if not os.path.exists(_VERIFICATION_CACHE_PATH):
+        return {}
+    with open(_VERIFICATION_CACHE_PATH, "r") as f:
+        return json.load(f)
+
+
+def save_verification_cache(cache: dict) -> None:
+    """Write the verification cache to disk."""
+    with open(_VERIFICATION_CACHE_PATH, "w") as f:
+        json.dump(cache, f, indent=2)
+
+
+def verify_bug(w3: Web3, contracts: dict, bug_id: int, deployments: dict) -> dict:
+    """Steps 1-5 of the executor pipeline: decrypt, run PoC, build state diff, upload IPFS.
+
+    Returns a verification dict and persists it to the verification cache.
+    """
     ecies_private_key = os.getenv("EXECUTOR_ECIES_PRIVATE_KEY")
-    account = w3.eth.account.from_key(private_key)
     executor_agent_id = deployments["agentIds"]["executor"]
 
     # 1. Fetch submission details
@@ -79,6 +96,54 @@ def process_revealed_bug(w3: Web3, contracts: dict, bug_id: int, deployments: di
 
     print(f"  State impact uploaded: {state_impact_cid}")
 
+    verification = {
+        "bug_id": bug_id,
+        "exploit_succeeded": fork_result["success"],
+        "state_impact_cid": state_impact_cid,
+        "req_hash": req_hash,
+        "state_impact": state_impact,
+        "poc_source": poc_source,
+        "report": report,
+    }
+
+    # Persist to cache (req_hash hex-encoded for JSON serialisation)
+    cache = load_verification_cache()
+    cache[str(bug_id)] = {**verification, "req_hash": req_hash.hex()}
+    save_verification_cache(cache)
+
+    return verification
+
+
+def register_on_chain(
+    w3: Web3,
+    contracts: dict,
+    bug_id: int,
+    verification: dict | None,
+    deployments: dict,
+) -> dict:
+    """Steps 6-8 of the executor pipeline: ValidationRegistry + ArbiterContract + patch guidance.
+
+    If *verification* is None the entry is loaded from the verification cache.
+    Returns the state_impact dict.
+    """
+    if verification is None:
+        cache = load_verification_cache()
+        entry = cache.get(str(bug_id))
+        if entry is None:
+            raise ValueError(f"No cached verification found for bug #{bug_id}")
+        # Restore req_hash from hex string
+        verification = {**entry, "req_hash": bytes.fromhex(entry["req_hash"])}
+
+    private_key = os.getenv("EXECUTOR_PRIVATE_KEY")
+    account = w3.eth.account.from_key(private_key)
+    executor_agent_id = deployments["agentIds"]["executor"]
+
+    state_impact_cid = verification["state_impact_cid"]
+    req_hash = verification["req_hash"]
+    state_impact = verification["state_impact"]
+    poc_source = verification["poc_source"]
+    report = verification["report"]
+
     # 6. Submit to ValidationRegistry
     nonce = w3.eth.get_transaction_count(account.address)
     tx = contracts["validationRegistry"].functions.submitValidation(
@@ -122,6 +187,15 @@ def process_revealed_bug(w3: Web3, contracts: dict, bug_id: int, deployments: di
             )
 
     return state_impact
+
+
+def process_revealed_bug(w3: Web3, contracts: dict, bug_id: int, deployments: dict) -> dict:
+    """Full executor pipeline for a revealed bug (backward-compatible wrapper).
+
+    Calls verify_bug() then register_on_chain() and returns the state_impact dict.
+    """
+    verification = verify_bug(w3, contracts, bug_id, deployments)
+    return register_on_chain(w3, contracts, bug_id, verification, deployments)
 
 
 def _fetch_protocol_ecies_pubkey(contracts: dict, deployments: dict) -> str:
@@ -199,35 +273,49 @@ def main():
     contracts = get_all_contracts(w3)
     deployments = load_deployments()
 
-    print("Executor watching for SubmissionDisputed events... (Ctrl+C to stop)")
+    print("Executor watching for BugRevealed + SubmissionDisputed events... (Ctrl+C to stop)")
     cursor = BlockCursor("executor")
-    processed = set()
+    verified = set()   # bug IDs that have been verified (PoC run)
+    registered = set() # bug IDs that have been registered on-chain
 
     while True:
         latest = w3.eth.block_number
         last = cursor.get_last_block()
         if latest > last:
-            # 1. Check for newly disputed submissions
+            # 1. Verify ALL newly revealed submissions (PoC + state diff, no on-chain registration)
+            revealed_events = contracts["bugSubmission"].events.BugRevealed.get_logs(
+                fromBlock=last + 1, toBlock=latest
+            )
+            for event in revealed_events:
+                bug_id = event["args"]["bugId"]
+                if bug_id not in verified:
+                    verified.add(bug_id)
+                    try:
+                        verify_bug(w3, contracts, bug_id, deployments)
+                    except Exception as e:
+                        print(f"  Error verifying bug #{bug_id}: {e}")
+
+            # 2. Register on-chain for newly disputed submissions (using cached verification)
             disputed_events = contracts["bugSubmission"].events.SubmissionDisputed.get_logs(
                 fromBlock=last + 1, toBlock=latest
             )
             for event in disputed_events:
                 bug_id = event["args"]["bugId"]
-                if bug_id not in processed:
-                    processed.add(bug_id)
+                if bug_id not in registered:
+                    registered.add(bug_id)
                     try:
-                        process_revealed_bug(w3, contracts, bug_id, deployments)
+                        register_on_chain(w3, contracts, bug_id, None, deployments)
                     except Exception as e:
-                        print(f"  Error processing bug #{bug_id}: {e}")
+                        print(f"  Error registering bug #{bug_id}: {e}")
 
-            # 2. Check for accepted submissions (just log, no processing needed)
+            # 3. Log accepted submissions
             accepted_events = contracts["bugSubmission"].events.SubmissionAccepted.get_logs(
                 fromBlock=last + 1, toBlock=latest
             )
             for event in accepted_events:
                 bug_id = event["args"]["bugId"]
-                processed.add(bug_id)
-                print(f"  Bug #{bug_id} accepted by protocol — skipping executor pipeline")
+                registered.add(bug_id)
+                print(f"  Bug #{bug_id} accepted by protocol — skipping on-chain registration")
 
             cursor.set_last_block(latest)
         time.sleep(5)

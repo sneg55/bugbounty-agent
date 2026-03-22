@@ -11,6 +11,7 @@ from common.config import RPC_URL, load_deployments
 from common.contracts import get_web3, get_all_contracts
 from common.crypto import decrypt
 from common.ipfs import download_json
+from executor.service import load_verification_cache
 from protocol.risk_model import get_default_tiers, get_default_funding
 from protocol.triage import triage_submission, SEVERITY_LABELS
 
@@ -118,8 +119,24 @@ def respond_to_submissions(w3: Web3, contracts: dict, deployments: dict):
                         processed.add(bug_id)
                         continue
 
-                    # 2. Triage via AI inference
-                    result = triage_submission(report, scope_source, claimed_severity)
+                    # 2. Read objective verification from executor cache (if available)
+                    verification = _poll_verification(bug_id, timeout=60)
+                    exploit_succeeded = None
+                    state_diff_summary = None
+                    if verification:
+                        exploit_succeeded = verification.get("exploit_succeeded")
+                        si = verification.get("state_impact", {})
+                        state_diff_summary = f"exploit={'PASS' if exploit_succeeded else 'FAIL'}, balanceChanges={len(si.get('balanceChanges', []))}, storageChanges={len(si.get('storageChanges', []))}"
+                        print(f"  Bug #{bug_id}: verification available — PoC {'PASS' if exploit_succeeded else 'FAIL'}")
+                    else:
+                        print(f"  Bug #{bug_id}: no verification cache — triaging from report only")
+
+                    # 3. Triage via AI inference + objective evidence
+                    result = triage_submission(
+                        report, scope_source, claimed_severity,
+                        exploit_succeeded=exploit_succeeded,
+                        state_diff_summary=state_diff_summary,
+                    )
 
                     claimed_label = SEVERITY_LABELS[claimed_severity] if 0 <= claimed_severity < len(SEVERITY_LABELS) else "?"
                     print(f"  Bug #{bug_id}: claimed={claimed_label} | "
@@ -153,6 +170,18 @@ def respond_to_submissions(w3: Web3, contracts: dict, deployments: dict):
         except Exception as e:
             print(f"  [WARN] respond poll error: {e}")
         time.sleep(5)
+
+
+def _poll_verification(bug_id, timeout=60, interval=5):
+    """Poll the executor's verification cache for a given bug ID."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        cache = load_verification_cache()
+        entry = cache.get(str(bug_id))
+        if entry is not None:
+            return entry
+        time.sleep(interval)
+    return None
 
 
 def _decrypt_and_fetch_scope(contracts, deployments, ecies_key, encrypted_cid, bounty_id):

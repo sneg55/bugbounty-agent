@@ -35,6 +35,8 @@ def triage_submission(
     report: dict,
     scope_source: str,
     claimed_severity: int,
+    exploit_succeeded: bool | None = None,
+    state_diff_summary: str | None = None,
 ) -> dict:
     """
     Assess a bug report via AI inference.
@@ -43,6 +45,8 @@ def triage_submission(
         report: The hunter's bug report dict with keys: contract, finding, severity, strategy
         scope_source: The Solidity source code of the target contract
         claimed_severity: Hunter's claimed severity (1=LOW, 2=MEDIUM, 3=HIGH, 4=CRITICAL)
+        exploit_succeeded: Optional result of objective PoC execution on a fork
+        state_diff_summary: Optional human-readable summary of on-chain state changes
 
     Returns:
         {
@@ -53,7 +57,16 @@ def triage_submission(
             "action": str,              # "ACCEPT" or "DISPUTE"
         }
     """
-    prompt = _build_triage_prompt(report, scope_source, claimed_severity)
+    if exploit_succeeded is not None and not exploit_succeeded:
+        return {
+            "valid": False,
+            "estimated_severity": "INVALID",
+            "confidence": 1.0,
+            "reasoning": "PoC execution failed — exploit did not succeed in fork",
+            "action": "DISPUTE",
+        }
+
+    prompt = _build_triage_prompt(report, scope_source, claimed_severity, exploit_succeeded, state_diff_summary)
 
     try:
         raw = complete(
@@ -92,8 +105,20 @@ def _decide_action(result: dict, claimed_severity: int) -> str:
     return "DISPUTE"
 
 
-def _build_triage_prompt(report: dict, scope_source: str, claimed_severity: int) -> str:
+def _build_triage_prompt(
+    report: dict,
+    scope_source: str,
+    claimed_severity: int,
+    exploit_succeeded: bool | None = None,
+    state_diff_summary: str | None = None,
+) -> str:
     claimed_label = SEVERITY_LABELS[claimed_severity] if 0 <= claimed_severity < len(SEVERITY_LABELS) else "UNKNOWN"
+
+    verification_section = ""
+    if exploit_succeeded is not None:
+        poc_status = "SUCCEEDED" if exploit_succeeded else "FAILED"
+        state_diff_line = f"\n**State Diff Summary:** {state_diff_summary}" if state_diff_summary else ""
+        verification_section = f"\n\n## Objective Verification\n\n**PoC Execution:** {poc_status}{state_diff_line}"
 
     return f"""## Bug Report
 
@@ -106,7 +131,7 @@ def _build_triage_prompt(report: dict, scope_source: str, claimed_severity: int)
 
 ```solidity
 {scope_source[:8000]}
-```
+```{verification_section}
 
 Assess this bug report. Is the described vulnerability real and exploitable in the given contract? What severity would you assign?"""
 

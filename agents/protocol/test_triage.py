@@ -134,3 +134,64 @@ def test_triage_fallback_on_exception(mock_complete):
 
     assert result["action"] == "DISPUTE"
     assert result["valid"] is False
+
+
+# --- Objective verification tests ---
+
+def test_triage_dispute_on_poc_failure():
+    """PoC failed = always dispute, no LLM call needed."""
+    report = {"contract": "Vault", "finding": "reentrancy", "severity": "CRITICAL", "strategy": "reenter"}
+    result = triage_submission(
+        report, "contract Vault { ... }", claimed_severity=4,
+        exploit_succeeded=False,
+    )
+
+    assert result["action"] == "DISPUTE"
+    assert result["valid"] is False
+    assert result["confidence"] == 1.0
+    assert "failed" in result["reasoning"].lower() or "PoC" in result["reasoning"]
+
+
+@patch("protocol.triage.complete")
+def test_triage_accept_with_poc_success(mock_complete):
+    """PoC succeeded + LLM agrees = accept."""
+    mock_complete.return_value = json.dumps({
+        "valid": True,
+        "estimated_severity": "CRITICAL",
+        "confidence": 0.95,
+        "reasoning": "Reentrancy confirmed by state diff",
+    })
+
+    report = {"contract": "Vault", "finding": "reentrancy", "severity": "CRITICAL", "strategy": "reenter"}
+    result = triage_submission(
+        report, "contract Vault { ... }", claimed_severity=4,
+        exploit_succeeded=True,
+        state_diff_summary="exploit=PASS, balanceChanges=2, storageChanges=1",
+    )
+
+    assert result["action"] == "ACCEPT"
+    assert result["valid"] is True
+
+
+@patch("protocol.triage.complete")
+def test_triage_uses_verification_in_prompt(mock_complete):
+    """Verify that PoC result appears in the prompt sent to the LLM."""
+    mock_complete.return_value = json.dumps({
+        "valid": True,
+        "estimated_severity": "HIGH",
+        "confidence": 0.8,
+        "reasoning": "Valid based on state diff",
+    })
+
+    report = {"contract": "Token", "finding": "overflow", "severity": "HIGH", "strategy": "n/a"}
+    triage_submission(
+        report, "contract Token { ... }", claimed_severity=3,
+        exploit_succeeded=True,
+        state_diff_summary="exploit=PASS, balanceChanges=1",
+    )
+
+    # Check the prompt included verification data
+    call_args = mock_complete.call_args
+    user_message = call_args[1]["messages"][1]["content"] if "messages" in call_args[1] else call_args[0][0][1]["content"]
+    assert "SUCCEEDED" in user_message
+    assert "balanceChanges=1" in user_message

@@ -264,5 +264,29 @@ All agents currently loop `for i in range(1, getSubmissionCount()+1)` every cycl
 
 ---
 
+## Phase 7: Objective Verification Before Accept (State-Diff-Backed Triage)
+
+Created: 2026-03-21 | Source: Feedback — ACCEPT path relies on hunter narrative, not objective proof
+
+The protocol's accept path currently triages from the hunter's text report only. Objective evidence (PoC execution, state diff) only happens after dispute. Fix: executor verifies ALL revealed submissions, protocol reads the verification before deciding.
+
+**New flow:**
+```
+1. Hunter reveals → BugRevealed
+2. Executor sees BugRevealed → runs PoC + state diff → uploads to IPFS → writes verification cache
+3. Protocol sees BugRevealed → waits for verification → reads state diff + LLM triage → accept/dispute
+4. If disputed → executor registers cached state diff on-chain → arbitration
+```
+
+| Task | 内容 | DoD | Depends | Status |
+|------|------|-----|---------|--------|
+| 7.1 | Split `process_revealed_bug()` into `verify_bug()` + `register_on_chain()` with verification cache | Both functions work; verify returns result dict and caches to `.verification_cache.json` | - | cc:完了 |
+| 7.2 | Executor watches `BugRevealed` (verify all) + `SubmissionDisputed` (register cached) | Executor verifies ALL reveals; only registers on-chain after dispute | 7.1 | cc:完了 |
+| 7.3 | Triage adds `exploit_succeeded` + `state_diff_summary`; PoC fail = hard dispute | Triage uses objective evidence; PoC-fail skips LLM entirely | - | cc:完了 |
+| 7.4 | Protocol polls verification cache before triage, passes PoC result to decision | Protocol waits for verification; logs evidence source | 7.1, 7.3 | cc:完了 |
+| 7.5 | Tests: PoC-fail → dispute, PoC-pass + match → accept, verification in prompt | 3 new test cases pass (36 total) | 7.1, 7.3 | cc:完了 |
+
+---
+
 ## Archive
 <!-- Completed tasks move here -->
