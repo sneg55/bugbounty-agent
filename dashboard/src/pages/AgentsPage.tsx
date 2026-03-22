@@ -46,20 +46,24 @@ async function fetchAgents(): Promise<Agent[]> {
   const agents: Agent[] = []
 
   for (let i = 1; i <= total; i++) {
-    const [owner, uri, rep, validity] = await Promise.all([
+    const [owner, uri, rep, validity, roleBytes] = await Promise.all([
       identityContract.ownerOf(i),
       identityContract.tokenURI(i),
       reputationContract.getReputation(i),
       reputationContract.getValidityRate(i),
+      identityContract.getMetadata(i, 'role').catch(() => '0x'),
     ])
     const uriStr = uri as string
+    // Prefer on-chain "role" metadata; fall back to URI heuristic
+    const roleStr = roleBytes && roleBytes !== '0x' ? ethers.toUtf8String(roleBytes) : ''
+    const role = roleStr ? roleFromURI(roleStr) : roleFromURI(uriStr)
     agents.push({
       id: i,
       owner: owner as string,
       uri: uriStr,
       reputation: Number(rep),
       validityRate: Number(validity),
-      role: roleFromURI(uriStr),
+      role,
     })
   }
 

@@ -25,7 +25,9 @@ export const BUG_SUBMISSION_ABI = [
   'event BugCommitted(uint256 indexed bugId, uint256 indexed bountyId, uint256 indexed hunterAgentId, uint8 claimedSeverity)',
   'event BugRevealed(uint256 indexed bugId, string encryptedCID)',
   'event SubmissionResolved(uint256 indexed bugId, uint8 finalSeverity, bool isValid)',
-  'function getSubmission(uint256 bugId) view returns (tuple(uint256 bountyId, uint256 hunterAgentId, uint8 claimedSeverity, bytes32 commitHash, string encryptedCID, uint256 stake, uint8 status, uint8 finalSeverity, bool isValid, uint256 commitBlock, address hunterWallet))',
+  'event SubmissionAccepted(uint256 indexed bugId, uint8 claimedSeverity)',
+  'event SubmissionDisputed(uint256 indexed bugId)',
+  'function getSubmission(uint256 bugId) view returns (tuple(uint256 bountyId, uint256 hunterAgentId, uint8 claimedSeverity, bytes32 commitHash, string encryptedCID, uint256 stake, uint8 status, uint8 finalSeverity, bool isValid, uint256 commitBlock, address hunterWallet, uint256 revealedAt, uint8 protocolResponse))',
   'function getSubmissionCount() view returns (uint256)',
 ]
 
